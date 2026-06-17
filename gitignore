@@ -1,0 +1,8 @@
+# Never commit the local secrets file — use Streamlit Cloud's Secrets manager instead
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
