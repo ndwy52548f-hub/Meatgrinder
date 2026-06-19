@@ -250,13 +250,31 @@ with st.sidebar:
     )
 
     if uploaded is not None:
-        df, err = parse_uploaded_file(uploaded)
+        df, err, diag = parse_uploaded_file(uploaded)
         if err:
             st.error(err)
+            if diag:
+                with st.expander("Parse diagnostics"):
+                    st.json(diag)
         else:
             st.session_state['fund_df'] = df
             st.session_state['outliers_df'] = compute_outliers(df)
+            st.session_state['parse_diag'] = diag
             st.success(f"✓ {len(df)} monthly observations loaded")
+            # Show staging summary
+            st.markdown(
+                f"<small style='color:#7a8ea8;'>"
+                f"Date col: <b>{diag.get('date_col','?')}</b> · "
+                f"Format: <b>{diag.get('date_format','?')}</b><br>"
+                f"Return col: <b>{diag.get('ret_col','?')}</b> · "
+                f"Scale: <b>{diag.get('ret_format','?')}</b><br>"
+                f"Parsed: <b>{diag.get('n_parsed','?')}</b> rows · "
+                f"Dropped: <b>{diag.get('n_dropped',0)}</b>"
+                + (f"<br>⚠ Failed dates: {diag['failed_dates'][:5]}"
+                   if diag.get('failed_dates') else "")
+                + "</small>",
+                unsafe_allow_html=True
+            )
 
     st.markdown("---")
     st.markdown("### Settings")
