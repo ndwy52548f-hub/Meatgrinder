@@ -618,7 +618,7 @@ def parse_uploaded_file(uploaded_file) -> tuple[pd.DataFrame, str]:
         return None, "Could not identify a return column."
 
     # Parse dates
-    dates = pd.to_datetime(raw[date_col], infer_datetime_format=True, errors='coerce')
+    dates = pd.to_datetime(raw[date_col], errors='coerce')
     if dates.isna().all():
         return None, f"Could not parse dates in column '{date_col}'."
 
