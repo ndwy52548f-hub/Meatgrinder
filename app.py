@@ -358,53 +358,70 @@ def _check_password():
         else:
             st.session_state["pw_wrong"] = True
 
-    # Force the entire page black via CSS, then use columns to center content
     st.markdown("""
     <style>
-    .stApp { background: #1A1A1A !important; }
-    .main .block-container { background: #1A1A1A !important; padding-top: 15vh !important; }
-    /* Make the password label and input visible on dark background */
+    .stApp { background: #000B14 !important; }
+    .main .block-container {
+        background: #000B14 !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+    }
     [data-testid="stTextInput"] label p {
-        color: #999999 !important;
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 10px !important;
-        letter-spacing: 2px !important;
+        color: #00CFFF !important;
+        font-family: 'Inter', sans-serif !important;
+        font-size: 13px !important;
+        font-weight: 700 !important;
+        letter-spacing: 3px !important;
         text-transform: uppercase !important;
     }
     [data-testid="stTextInput"] input {
-        background: #2A2A2A !important;
-        border: 1px solid #444444 !important;
-        border-radius: 3px !important;
+        background: #001A2E !important;
+        border: 2px solid #00CFFF !important;
+        border-radius: 4px !important;
         color: #FFFFFF !important;
-        font-size: 16px !important;
-        padding: 12px 16px !important;
+        font-size: 20px !important;
+        padding: 14px 18px !important;
+        letter-spacing: 2px !important;
     }
-    [data-testid="stTextInput"] input::placeholder { color: #666666 !important; }
+    [data-testid="stTextInput"] input::placeholder {
+        color: #336688 !important;
+        font-size: 16px !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-    _, col, _ = st.columns([1, 1, 1])
+    _, col, _ = st.columns([1, 1.2, 1])
     with col:
         st.markdown("""
-        <div style="text-align:center; padding-bottom: 48px;">
-          <div style="font-family:'Inter',sans-serif; font-size:42px; font-weight:700;
-                      letter-spacing:8px; color:#FFFFFF; text-transform:uppercase;
-                      margin-bottom:14px;">
+        <div style="text-align:center; padding: 80px 0 56px 0;">
+          <div style="font-family:'Inter',sans-serif; font-size:52px; font-weight:900;
+                      letter-spacing:10px; color:#00CFFF; text-transform:uppercase;
+                      text-shadow: 0 0 40px rgba(0,207,255,0.6);
+                      margin-bottom:16px;">
             MEATGRINDER
           </div>
-          <div style="font-family:'JetBrains Mono',monospace; font-size:12px;
-                      color:#AAAAAA; letter-spacing:4px;">
+          <div style="font-family:'Inter',sans-serif; font-size:16px; font-weight:500;
+                      color:#FFFFFF; letter-spacing:5px; text-transform:uppercase;">
             PERFORMANCE ANALYTICS
           </div>
+          <div style="margin-top:60px; width:60px; height:2px;
+                      background:#00CFFF; margin-left:auto; margin-right:auto;
+                      box-shadow:0 0 10px #00CFFF;"></div>
         </div>
         """, unsafe_allow_html=True)
 
-        st.text_input("PASSWORD", type="password", key="pw_input",
+        st.text_input("ACCESS CODE", type="password", key="pw_input",
                       on_change=_submit, label_visibility="visible",
-                      placeholder="Enter password")
+                      placeholder="········")
 
         if st.session_state.get("pw_wrong"):
-            st.error("Incorrect password")
+            st.markdown("""
+            <div style="color:#FF4444; font-family:'Inter',sans-serif;
+                        font-size:14px; font-weight:600; text-align:center;
+                        margin-top:12px; letter-spacing:2px;">
+                ACCESS DENIED
+            </div>
+            """, unsafe_allow_html=True)
             st.session_state["pw_wrong"] = False
 
     return False
