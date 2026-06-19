@@ -15,22 +15,22 @@ from analytics import (
 
 # ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
 C = {
-    'bg':        '#F5F0E8',
-    'surface':   '#FDFAF4',
-    'border':    '#DDD8CC',
+    'bg':        '#F7F5F0',
+    'surface':   '#FFFFFF',
+    'border':    '#E0DDD6',
     'text':      '#1A1A1A',
-    'muted':     '#888070',
+    'muted':     '#999990',
     'accent':    '#1A1A1A',
-    'green':     '#1B6B3A',
-    'red':       '#B01C2E',
-    'gold':      '#9A6B00',
-    'grid':      'rgba(200,192,176,0.5)',
-    'accent_lt': 'rgba(26,26,26,0.07)',
-    'green_lt':  'rgba(27,107,58,0.10)',
-    'red_lt':    'rgba(176,28,46,0.10)',
+    'green':     '#1A8A50',
+    'red':       '#CC2222',
+    'gold':      '#9A6800',
+    'grid':      'rgba(200,196,186,0.6)',
+    'accent_lt': 'rgba(26,26,26,0.06)',
+    'green_lt':  'rgba(26,138,80,0.10)',
+    'red_lt':    'rgba(204,34,34,0.10)',
 }
 
-FONT_UI   = 'Inter, -apple-system, Segoe UI, sans-serif'
+FONT_UI   = 'Inter, -apple-system, sans-serif'
 FONT_MONO = 'JetBrains Mono, Menlo, Monaco, Consolas, monospace'
 
 LAYOUT_BASE = dict(
