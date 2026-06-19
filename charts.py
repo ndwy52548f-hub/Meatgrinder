@@ -15,23 +15,23 @@ from analytics import (
 
 # ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
 C = {
-    'bg':        '#f4f7fb',
-    'surface':   '#ffffff',
-    'border':    '#d0daea',
-    'text':      '#1a2332',
-    'muted':     '#7a8ea8',
-    'accent':    '#1a6cf5',
-    'green':     '#0a7a50',
-    'red':       '#c0182a',
-    'gold':      '#c47d0a',
-    'grid':      'rgba(200,212,228,0.7)',
-    'accent_lt': 'rgba(26,108,245,0.12)',
-    'green_lt':  'rgba(10,122,80,0.12)',
-    'red_lt':    'rgba(192,24,42,0.12)',
+    'bg':        '#F5F0E8',
+    'surface':   '#FDFAF4',
+    'border':    '#DDD8CC',
+    'text':      '#1A1A1A',
+    'muted':     '#888070',
+    'accent':    '#1A1A1A',
+    'green':     '#1B6B3A',
+    'red':       '#B01C2E',
+    'gold':      '#9A6B00',
+    'grid':      'rgba(200,192,176,0.5)',
+    'accent_lt': 'rgba(26,26,26,0.07)',
+    'green_lt':  'rgba(27,107,58,0.10)',
+    'red_lt':    'rgba(176,28,46,0.10)',
 }
 
-FONT_UI   = 'Gill Sans, Optima, Segoe UI, Helvetica Neue, sans-serif'
-FONT_MONO = 'Menlo, Monaco, Consolas, monospace'
+FONT_UI   = 'Inter, -apple-system, Segoe UI, sans-serif'
+FONT_MONO = 'JetBrains Mono, Menlo, Monaco, Consolas, monospace'
 
 LAYOUT_BASE = dict(
     paper_bgcolor = C['bg'],
