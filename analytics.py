@@ -565,49 +565,191 @@ def macro_events_table(fund_df: pd.DataFrame, bm_df: Optional[pd.DataFrame] = No
 
 # ─── CSV/EXCEL INGESTION ──────────────────────────────────────────────────────
 
-def parse_uploaded_file(uploaded_file) -> tuple[pd.DataFrame, str]:
+# All date formats we know how to parse, tried in order of specificity.
+# The goal is to always land in golden copy format: year (int), month (int), ret (float %).
+_DATE_FORMATS = [
+    # Month-Year with abbreviation: Jul-2005, Jul 2005, Jul/2005
+    '%b-%Y', '%b %Y', '%b/%Y',
+    # Month-Year full name: July-2005, July 2005
+    '%B-%Y', '%B %Y',
+    # ISO and numeric year-month: 2005-07, 2005/07
+    '%Y-%m', '%Y/%m',
+    # Numeric month-year: 07-2005, 07/2005, 07.2005
+    '%m-%Y', '%m/%Y', '%m.%Y',
+    # Full dates (day ignored, month/year extracted): 2005-07-01, 07/01/2005, 01/07/2005
+    '%Y-%m-%d', '%m/%d/%Y', '%d/%m/%Y', '%d-%m-%Y', '%d.%m.%Y',
+    # Excel serial and other edge cases handled separately below
+]
+
+
+def _parse_date_series(series: pd.Series) -> tuple[pd.Series, str]:
+    """
+    Attempt to parse a series of date strings into a pandas datetime Series.
+    Returns (parsed_series, format_used) or raises ValueError if nothing works.
+
+    Strategy:
+    1. Clean the strings (strip whitespace, normalise separators).
+    2. Try each known format, accept if >=80% of rows parse successfully.
+    3. Fall back to pandas' own inference as a last resort.
+    4. If the column is already numeric (Excel serial dates), convert directly.
+    """
+    # If already datetime, return as-is
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return series, 'datetime64'
+
+    # If numeric, try Excel serial date conversion
+    if pd.api.types.is_numeric_dtype(series):
+        try:
+            converted = pd.to_datetime(series, unit='D', origin='1899-12-30', errors='coerce')
+            if converted.notna().sum() > len(series) * 0.8:
+                return converted, 'excel_serial'
+        except Exception:
+            pass
+
+    # Normalise strings: strip, collapse internal whitespace, unify separators
+    cleaned = (series.astype(str)
+                     .str.strip()
+                     .str.replace(r'\s+', ' ', regex=True)
+                     .str.replace('–', '-', regex=False)
+                     .str.replace('—', '-', regex=False))  # em/en dash → hyphen
+
+    # Remove day-of-month prefix if present: "31 Jul 2005" → "Jul 2005"
+    cleaned = cleaned.str.replace(r'^\d{1,2}[\s\-/\.]+(?=[A-Za-z])', '', regex=True)
+
+    # Special handling for MM/YYYY, MM-YYYY, MM.YYYY (e.g. 07/2005)
+    # pandas infers these as day/year which is wrong — detect and handle explicitly
+    import re as _re
+    sample = cleaned.dropna().head(5).tolist()
+    mm_yyyy_pattern = _re.compile(r'^(\d{1,2})[/\-\.](\d{4})$')
+    if all(mm_yyyy_pattern.match(str(v)) for v in sample if str(v) not in ('nan','')):
+        def _parse_mm_yyyy(v):
+            m = mm_yyyy_pattern.match(str(v))
+            if m:
+                return pd.Timestamp(year=int(m.group(2)), month=int(m.group(1)), day=1)
+            return pd.NaT
+        parsed = cleaned.map(_parse_mm_yyyy)
+        if parsed.notna().sum() / max(len(cleaned), 1) >= 0.8:
+            return parsed, 'MM/YYYY'
+
+    # Try each explicit format
+    for fmt in _DATE_FORMATS:
+        try:
+            parsed = pd.to_datetime(cleaned, format=fmt, errors='coerce')
+            hit_rate = parsed.notna().sum() / max(len(cleaned), 1)
+            if hit_rate >= 0.8:
+                return parsed, fmt
+        except Exception:
+            continue
+
+    # Last resort: pandas mixed-format inference
+    try:
+        parsed = pd.to_datetime(cleaned, errors='coerce')
+        if parsed.notna().sum() / max(len(cleaned), 1) >= 0.8:
+            return parsed, 'pandas_inferred'
+    except Exception:
+        pass
+
+    raise ValueError(
+        f"Could not parse dates. Sample values: {series.dropna().head(3).tolist()}"
+    )
+
+
+def _parse_return_series(series: pd.Series) -> tuple[pd.Series, str]:
+    """
+    Parse a return column into float percent values.
+    Handles: '1.23%', '1.23', '0.0123' (decimal), '(1.23)' (negative parens).
+    Returns (series_in_percent, note).
+    """
+    if pd.api.types.is_numeric_dtype(series):
+        vals = series.astype(float)
+    else:
+        # Remove percent signs, parentheses (negative), currency symbols, spaces
+        cleaned = (series.astype(str)
+                         .str.strip()
+                         .str.replace('%', '', regex=False)
+                         .str.replace(r'[\$£€]', '', regex=True)
+                         .str.replace(r'^\((.+)\)$', r'-\1', regex=True)  # (1.23) → -1.23
+                         .str.replace(',', '', regex=False))
+        vals = pd.to_numeric(cleaned, errors='coerce')
+
+    non_nan = vals.dropna()
+    if len(non_nan) == 0:
+        raise ValueError("Return column contains no numeric values.")
+
+    # Detect decimal vs percent:
+    # If ALL absolute values are < 1 and none look like whole-number percents,
+    # assume decimal (0.0123 → 1.23%). Otherwise assume already in percent.
+    if (np.abs(non_nan) < 1.0).all():
+        note = 'decimal→percent (×100)'
+        vals = vals * 100
+    else:
+        note = 'percent (as-is)'
+
+    return vals, note
+
+
+def parse_uploaded_file(uploaded_file) -> tuple[pd.DataFrame | None, str, dict]:
     """
     Parse CSV or Excel file containing monthly returns.
-    Attempts to auto-detect date column and return column.
-    Returns (df with columns year/month/ret, error_message).
-    """
-    import io
+    Returns (golden_copy_df, error_message, parse_diagnostics).
 
+    golden_copy_df has columns: year (int), month (int), ret (float %)
+    sorted chronologically, duplicates removed (last value wins).
+
+    parse_diagnostics is a dict with keys:
+      date_col, ret_col, date_format, ret_format, n_raw, n_parsed,
+      n_dropped, failed_dates (list of unparseable raw strings)
+    """
+    diag = {}
+
+    # ── Read file ──────────────────────────────────────────────────────────────
     try:
         name = uploaded_file.name.lower()
         if name.endswith('.csv'):
-            raw = pd.read_csv(uploaded_file)
+            raw = pd.read_csv(uploaded_file, thousands=',')
         elif name.endswith(('.xlsx', '.xls')):
-            raw = pd.read_excel(uploaded_file)
+            raw = pd.read_excel(uploaded_file, thousands=',')
         else:
-            return None, "Unsupported file type. Please upload CSV or Excel."
+            return None, "Unsupported file type. Upload CSV or Excel (.csv, .xlsx, .xls).", diag
     except Exception as e:
-        return None, f"Could not read file: {e}"
+        return None, f"Could not read file: {e}", diag
+
+    # Drop fully empty rows and columns
+    raw = raw.dropna(how='all').dropna(axis=1, how='all').reset_index(drop=True)
 
     if raw.empty:
-        return None, "File appears to be empty."
+        return None, "File appears to be empty after removing blank rows.", diag
 
-    # Find date column
+    diag['n_raw'] = len(raw)
+
+    # ── Identify date column ───────────────────────────────────────────────────
     date_col = None
+    date_keywords = ['date', 'month', 'period', 'time', 'year', 'as of', 'asof']
     for col in raw.columns:
-        col_lower = str(col).lower()
-        if any(kw in col_lower for kw in ['date', 'month', 'period', 'time', 'year']):
+        if any(kw in str(col).lower() for kw in date_keywords):
             date_col = col
             break
     if date_col is None:
-        date_col = raw.columns[0]  # fall back to first column
+        # Fall back: first column that isn't purely numeric
+        for col in raw.columns:
+            if not pd.api.types.is_numeric_dtype(raw[col]):
+                date_col = col
+                break
+    if date_col is None:
+        date_col = raw.columns[0]
+    diag['date_col'] = str(date_col)
 
-    # Find return column
+    # ── Identify return column ─────────────────────────────────────────────────
     ret_col = None
+    ret_keywords = ['return', 'ret', 'perf', 'pnl', 'nav', 'gain', 'loss', 'p&l', 'monthly']
     for col in raw.columns:
         if col == date_col:
             continue
-        col_lower = str(col).lower()
-        if any(kw in col_lower for kw in ['return', 'ret', 'r', 'perf', 'pnl', 'nav']):
+        if any(kw in str(col).lower() for kw in ret_keywords):
             ret_col = col
             break
     if ret_col is None:
-        # Pick first numeric column that isn't the date
+        # Pick first numeric column that isn't the date column
         for col in raw.columns:
             if col == date_col:
                 continue
@@ -615,35 +757,64 @@ def parse_uploaded_file(uploaded_file) -> tuple[pd.DataFrame, str]:
                 ret_col = col
                 break
     if ret_col is None:
-        return None, "Could not identify a return column."
+        # Try converting each non-date column and pick the first that works
+        for col in raw.columns:
+            if col == date_col:
+                continue
+            test = pd.to_numeric(
+                raw[col].astype(str).str.replace('%','').str.strip(),
+                errors='coerce'
+            )
+            if test.notna().sum() > len(raw) * 0.5:
+                ret_col = col
+                break
+    if ret_col is None:
+        return None, "Could not identify a return column.", diag
+    diag['ret_col'] = str(ret_col)
 
-    # Parse dates
-    dates = pd.to_datetime(raw[date_col], errors='coerce')
-    if dates.isna().all():
-        return None, f"Could not parse dates in column '{date_col}'."
+    # ── Parse dates ───────────────────────────────────────────────────────────
+    try:
+        dates, date_fmt = _parse_date_series(raw[date_col])
+        diag['date_format'] = date_fmt
+    except ValueError as e:
+        return None, str(e), diag
 
-    # Parse returns — handle percent strings like "1.23%" or decimals like 0.0123
-    rets_raw = raw[ret_col].copy()
-    if rets_raw.dtype == object:
-        rets_raw = rets_raw.astype(str).str.replace('%','').str.strip()
-        rets_raw = pd.to_numeric(rets_raw, errors='coerce')
-    else:
-        rets_raw = pd.to_numeric(rets_raw, errors='coerce')
+    # Track which rows failed to parse
+    failed_mask = dates.isna()
+    diag['failed_dates'] = raw[date_col][failed_mask].astype(str).tolist()
 
-    # Auto-detect percent vs decimal: if all absolute values < 1, assume decimal
-    non_nan = rets_raw.dropna()
-    if len(non_nan) > 0 and (np.abs(non_nan) < 1).all():
-        rets_raw = rets_raw * 100
+    # ── Parse returns ─────────────────────────────────────────────────────────
+    try:
+        rets, ret_fmt = _parse_return_series(raw[ret_col])
+        diag['ret_format'] = ret_fmt
+    except ValueError as e:
+        return None, str(e), diag
 
-    df = pd.DataFrame({
+    # ── Assemble golden copy ───────────────────────────────────────────────────
+    working = pd.DataFrame({
         'year':  dates.dt.year,
         'month': dates.dt.month,
-        'ret':   rets_raw,
-    }).dropna().astype({'year': int, 'month': int, 'ret': float})
+        'ret':   rets,
+    })
 
-    df = df.sort_values(['year','month']).reset_index(drop=True)
+    # Drop rows where date or return failed to parse
+    n_before = len(working)
+    working = working.dropna()
+    working = working.astype({'year': int, 'month': int, 'ret': float})
 
-    if len(df) < 6:
-        return None, "Fewer than 6 valid data points found."
+    # Sort chronologically
+    working = working.sort_values(['year', 'month']).reset_index(drop=True)
 
-    return df, ""
+    # Remove duplicate month entries (keep last — most common in amended sheets)
+    working = working.drop_duplicates(subset=['year', 'month'], keep='last')
+
+    diag['n_parsed'] = len(working)
+    diag['n_dropped'] = n_before - len(working)
+
+    if len(working) < 6:
+        return None, (
+            f"Only {len(working)} valid monthly observations found after parsing. "
+            f"Need at least 6. Check that the date and return columns were identified correctly."
+        ), diag
+
+    return working, "", diag
