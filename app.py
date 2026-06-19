@@ -358,30 +358,55 @@ def _check_password():
         else:
             st.session_state["pw_wrong"] = True
 
+    # Force the entire page black via CSS, then use columns to center content
     st.markdown("""
-    <div style="min-height:100vh;background:#1A1A1A;display:flex;
-                align-items:center;justify-content:center;flex-direction:column;">
-      <div style="text-align:center;margin-bottom:40px;">
-        <div style="font-family:'Inter',sans-serif;font-size:40px;font-weight:700;
-                    letter-spacing:8px;color:#FFFFFF;text-transform:uppercase;">
-          MEATGRINDER
-        </div>
-        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;
-                    color:#555;letter-spacing:3px;margin-top:10px;">
-          PERFORMANCE ANALYTICS
-        </div>
-      </div>
-    </div>
+    <style>
+    .stApp { background: #1A1A1A !important; }
+    .main .block-container { background: #1A1A1A !important; padding-top: 15vh !important; }
+    /* Make the password label and input visible on dark background */
+    [data-testid="stTextInput"] label p {
+        color: #999999 !important;
+        font-family: 'JetBrains Mono', monospace !important;
+        font-size: 10px !important;
+        letter-spacing: 2px !important;
+        text-transform: uppercase !important;
+    }
+    [data-testid="stTextInput"] input {
+        background: #2A2A2A !important;
+        border: 1px solid #444444 !important;
+        border-radius: 3px !important;
+        color: #FFFFFF !important;
+        font-size: 16px !important;
+        padding: 12px 16px !important;
+    }
+    [data-testid="stTextInput"] input::placeholder { color: #666666 !important; }
+    </style>
     """, unsafe_allow_html=True)
 
-    _, col, _ = st.columns([1, 0.55, 1])
+    _, col, _ = st.columns([1, 1, 1])
     with col:
+        st.markdown("""
+        <div style="text-align:center; padding-bottom: 48px;">
+          <div style="font-family:'Inter',sans-serif; font-size:42px; font-weight:700;
+                      letter-spacing:8px; color:#FFFFFF; text-transform:uppercase;
+                      margin-bottom:14px;">
+            MEATGRINDER
+          </div>
+          <div style="font-family:'JetBrains Mono',monospace; font-size:12px;
+                      color:#AAAAAA; letter-spacing:4px;">
+            PERFORMANCE ANALYTICS
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
         st.text_input("PASSWORD", type="password", key="pw_input",
                       on_change=_submit, label_visibility="visible",
                       placeholder="Enter password")
+
         if st.session_state.get("pw_wrong"):
             st.error("Incorrect password")
             st.session_state["pw_wrong"] = False
+
     return False
 
 if not _check_password():
@@ -404,7 +429,6 @@ for k, v in {
 st.markdown("""
 <div class="mg-topbar">
   <div class="brand">Meatgrinder</div>
-  <div class="info">Performance Analytics &nbsp;·&nbsp; Rf = TB3MS (FRED) &nbsp;·&nbsp; MSCI World Hdg · Bloomberg Agg</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -412,17 +436,48 @@ st.markdown("""
 # ─── LANDING ──────────────────────────────────────────────────────────────────
 
 if st.session_state['fund_df'] is None:
-    st.markdown("""
-    <div class="mg-land">
-      <h1>Upload a fund file to begin</h1>
-      <p>CSV or Excel &nbsp;·&nbsp; date + monthly return &nbsp;·&nbsp; percent or decimal auto-detected</p>
-    </div>
-    """, unsafe_allow_html=True)
 
-    _, col_up, _ = st.columns([1, 1, 1])
+    # Centered layout: heading + uploader + requirements box, all together
+    _, col_up, _ = st.columns([1, 1.4, 1])
     with col_up:
+        st.markdown("""
+        <div style="padding: 60px 0 32px; text-align: center;">
+          <div style="font-family: 'Inter', sans-serif; font-size: 36px; font-weight: 700;
+                      color: #1A1A1A; margin-bottom: 8px;">
+            Upload a fund file to begin
+          </div>
+          <div style="font-family: 'Inter', sans-serif; font-size: 16px;
+                      color: #666660; margin-bottom: 32px;">
+            Drag and drop or click to select a CSV or Excel file
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
         up = st.file_uploader("", type=['csv','xlsx','xls'], label_visibility="collapsed")
-        st.markdown('<div class="hint" style="text-align:center;font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#AAAAAA;margin-top:8px;">CSV or Excel · date + monthly return column</div>', unsafe_allow_html=True)
+
+        st.markdown("""
+        <div style="margin-top: 32px; border: 1px solid #E0DDD6; border-radius: 6px;
+                    background: #FFFFFF; padding: 24px 28px;">
+          <div style="font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 700;
+                      text-transform: uppercase; letter-spacing: 1.5px; color: #1A1A1A;
+                      margin-bottom: 16px; border-bottom: 1px solid #E0DDD6; padding-bottom: 10px;">
+            File Requirements
+          </div>
+          <div style="font-family: 'Inter', sans-serif; font-size: 14px; color: #333330;
+                      line-height: 2;">
+            <div>1. &nbsp; Format: CSV or Excel (.csv, .xlsx, .xls)</div>
+            <div>2. &nbsp; One column of dates (any standard date format)</div>
+            <div>3. &nbsp; One column of monthly returns (% or decimal — auto-detected)</div>
+            <div>4. &nbsp; Column headers optional — app detects columns automatically</div>
+            <div>5. &nbsp; Minimum 6 months of data required</div>
+          </div>
+          <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #E0DDD6;
+                      font-family: 'Inter', sans-serif; font-size: 13px; color: #888880;">
+            Benchmarks (MSCI World Hedged, Bloomberg Global Agg) and TB3MS risk-free rates
+            are built in — no need to upload them.
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     if up is not None:
         df, err, diag = parse_uploaded_file(up)
