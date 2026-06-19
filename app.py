@@ -360,12 +360,20 @@ def _check_password():
 
     st.markdown("""
     <style>
-    .stApp { background: #006B7A !important; }
-    .main .block-container {
+    /* Paint teal across every Streamlit container variant — selectors changed
+       between versions, so we cover the class names AND the data-testids. */
+    .stApp,
+    [data-testid="stAppViewContainer"],
+    [data-testid="stMain"],
+    [data-testid="stMainBlockContainer"],
+    section.main,
+    .main,
+    .block-container {
         background: #006B7A !important;
-        padding-top: 0 !important;
-        padding-bottom: 0 !important;
     }
+    [data-testid="stHeader"] { background: transparent !important; }
+    .block-container { padding-top: 0 !important; padding-bottom: 0 !important; }
+    html, body, .stApp { overflow-x: hidden !important; }
     [data-testid="stTextInput"] label p {
         color: #FFFFFF !important;
         font-family: 'Inter', sans-serif !important;
@@ -391,16 +399,22 @@ def _check_password():
     _, col, _ = st.columns([1, 1.6, 1])
     with col:
         st.markdown("""
-        <div style="text-align:center; padding: 80px 0 48px 0;">
-          <div style="font-family:'Inter',sans-serif; font-size:56px; font-weight:900;
-                      letter-spacing:8px; color:#FFFFFF; text-transform:uppercase;
-                      white-space:nowrap; margin-bottom:16px;">
+        <div style="background:#006B7A; min-height:58vh;
+                    display:flex; flex-direction:column;
+                    align-items:center; justify-content:center;
+                    text-align:center;
+                    margin-left:-50vw; margin-right:-50vw;
+                    padding-left:50vw; padding-right:50vw;">
+          <div style="font-family:'Inter',sans-serif; font-size:64px; font-weight:900;
+                      letter-spacing:12px; color:#FFFFFF; text-transform:uppercase;
+                      white-space:nowrap; line-height:1;
+                      text-shadow:0 2px 24px rgba(0,0,0,0.18);">
             MEATGRINDER
           </div>
-          <div style="font-family:'Inter',sans-serif; font-size:16px; font-weight:500;
-                      color:#CCEEEE; letter-spacing:5px; text-transform:uppercase;
-                      margin-bottom:48px;">
-            PERFORMANCE ANALYTICS
+          <div style="font-family:'Inter',sans-serif; font-size:18px; font-weight:600;
+                      color:#FFFFFF; letter-spacing:7px; text-transform:uppercase;
+                      margin-top:22px; opacity:0.92;">
+            Performance Analytics
           </div>
         </div>
         """, unsafe_allow_html=True)
