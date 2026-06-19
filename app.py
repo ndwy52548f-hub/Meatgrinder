@@ -774,7 +774,7 @@ with tabs[0]:
 <thead><tr><th>Metric</th><th>{fund_name}</th><th>{bm1_name}</th>{b2h}</tr></thead><tbody>"""
             for (m, pct, dec, flip) in bm_defs:
                 html2 += f'<tr><td class="lbl">{m}</td>'
-                for st_d in ([fs, b1] + ([b2] if bm2_al else [])):
+                for st_d in ([fs, b1] + ([b2] if bm2_al is not None else [])):
                     v = st_d.get(m, np.nan)
                     try:
                         c = _cls(float(v), flip)
