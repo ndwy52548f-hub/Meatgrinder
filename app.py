@@ -484,9 +484,9 @@ def _check_password():
 
         if st.session_state.get("pw_wrong"):
             st.markdown("""
-            <div style="color:#FFCCCC; font-family:'Inter',sans-serif;
-                        font-size:14px; font-weight:600; text-align:center;
-                        margin-top:12px; letter-spacing:2px;">
+            <div style="color:#CC2222; font-family:'Inter',sans-serif;
+                        font-size:15px; font-weight:700; text-align:center;
+                        margin-top:12px; letter-spacing:1px;">
                 Incorrect password — try again
             </div>
             """, unsafe_allow_html=True)
