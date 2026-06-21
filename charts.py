@@ -15,19 +15,20 @@ from analytics import (
 
 # ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
 C = {
-    'bg':        '#F7F5F0',
-    'surface':   '#FFFFFF',
-    'border':    '#E0DDD6',
-    'text':      '#1A1A1A',
-    'muted':     '#999990',
-    'accent':    '#1A1A1A',
-    'green':     '#1A8A50',
-    'red':       '#CC2222',
-    'gold':      '#9A6800',
-    'grid':      'rgba(200,196,186,0.6)',
-    'accent_lt': 'rgba(26,26,26,0.06)',
-    'green_lt':  'rgba(26,138,80,0.10)',
-    'red_lt':    'rgba(204,34,34,0.10)',
+    'bg':        '#FFFFFF',
+    'surface':   '#006B7A',
+    'border':    'rgba(255,255,255,0.30)',
+    'text':      '#FFFFFF',
+    'axis':      '#1A1A1A',
+    'muted':     '#DCEFEF',
+    'accent':    '#FFFFFF',
+    'green':     '#5FE3A0',
+    'red':       '#FF8A8A',
+    'gold':      '#FFD24A',
+    'grid':      'rgba(255,255,255,0.15)',
+    'accent_lt': 'rgba(255,255,255,0.16)',
+    'green_lt':  'rgba(95,227,160,0.18)',
+    'red_lt':    'rgba(255,138,138,0.18)',
 }
 
 FONT_UI   = 'Inter, -apple-system, sans-serif'
@@ -36,12 +37,14 @@ FONT_MONO = 'JetBrains Mono, Menlo, Monaco, Consolas, monospace'
 LAYOUT_BASE = dict(
     paper_bgcolor = C['bg'],
     plot_bgcolor  = C['surface'],
-    font          = dict(family=FONT_UI, size=11, color=C['text']),
-    margin        = dict(l=48, r=24, t=36, b=36),
-    xaxis         = dict(gridcolor=C['grid'], tickfont=dict(family=FONT_MONO, size=10, color=C['muted']),
-                         linecolor=C['border'], zeroline=False),
-    yaxis         = dict(gridcolor=C['grid'], tickfont=dict(family=FONT_MONO, size=10, color=C['muted']),
-                         linecolor=C['border'], zeroline=True, zerolinecolor=C['border']),
+    font          = dict(family=FONT_UI, size=13, color=C['axis']),
+    margin        = dict(l=60, r=24, t=40, b=50),
+    xaxis         = dict(gridcolor=C['grid'], tickfont=dict(family=FONT_MONO, size=13, color=C['axis']),
+                         linecolor=C['border'], zeroline=False,
+                         title_font=dict(family=FONT_UI, size=14, color=C['axis'])),
+    yaxis         = dict(gridcolor=C['grid'], tickfont=dict(family=FONT_MONO, size=13, color=C['axis']),
+                         linecolor=C['border'], zeroline=True, zerolinecolor=C['border'],
+                         title_font=dict(family=FONT_UI, size=14, color=C['axis'])),
     showlegend    = False,
     hovermode     = 'x unified',
 )
@@ -51,6 +54,38 @@ MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 def _date_labels(df: pd.DataFrame) -> list[str]:
     return [f"{MN[int(r.month)-1]} {int(r.year)}" for r in df.itertuples()]
+
+
+def _date_ticks(df: pd.DataFrame):
+    """Readable x-axis ticks for a monthly series. Density is capped so labels
+    never crowd or overlap at any chart width: at most ~6 evenly-spaced year
+    labels for long histories; quarter/half-year detail for short ranges."""
+    labels = _date_labels(df)
+    rows = list(df.itertuples())
+    years = sorted({int(r.year) for r in rows})
+    n = len(years)
+    tickvals, ticktext = [], []
+    if n > 6:
+        step = max(1, -(-n // 6))              # ceil(n/6) -> <= 6 labels
+        target = set(years[::step]) | {years[-1]}
+        seen = set()
+        for i, r in enumerate(rows):
+            yr = int(r.year)
+            if yr in target and yr not in seen:
+                tickvals.append(labels[i]); ticktext.append(str(yr)); seen.add(yr)
+    else:
+        months = (1, 4, 7, 10)
+        seen = set()
+        for i, r in enumerate(rows):
+            mo, yr = int(r.month), int(r.year)
+            if mo not in months:
+                continue
+            tickvals.append(labels[i])
+            if yr not in seen:
+                ticktext.append(str(yr)); seen.add(yr)
+            else:
+                ticktext.append(MN[mo - 1])
+    return tickvals, ticktext
 
 
 def _apply_base(fig: go.Figure, **overrides) -> go.Figure:
@@ -89,7 +124,7 @@ def chart_cumulative(fund_df: pd.DataFrame,
             fig.add_trace(go.Scatter(
                 x=_date_labels(fund_df.merge(bm1_df, on=['year','month'])),
                 y=w, name=bm1_name,
-                line=dict(color=C['muted'], width=1.5, dash='dot'),
+                line=dict(color=C['gold'], width=1.8, dash='dot'),
                 hovertemplate='%{y:.1f}<extra>' + bm1_name + '</extra>'
             ))
 
@@ -101,17 +136,21 @@ def chart_cumulative(fund_df: pd.DataFrame,
             fig.add_trace(go.Scatter(
                 x=_date_labels(merged2),
                 y=w2, name=bm2_name,
-                line=dict(color=C['gold'], width=1.5, dash='dot'),
+                line=dict(color='#7FD4FF', width=1.8, dash='dot'),
                 hovertemplate='%{y:.1f}<extra>' + bm2_name + '</extra>'
             ))
 
     fig.update_layout(showlegend=True)
+    _tv, _tt = _date_ticks(fund_df)
     _apply_base(fig,
         yaxis_title='Growth of $100',
+        xaxis=dict(tickmode='array', tickangle=0, tickvals=_tv, ticktext=_tt,
+                   gridcolor=C['grid'], linecolor=C['border'], zeroline=False,
+                   tickfont=dict(family=FONT_MONO, size=13, color=C['axis'])),
         yaxis=dict(tickformat=',.0f', gridcolor=C['grid'],
-                   tickfont=dict(family=FONT_MONO, size=10, color=C['muted'])),
+                   tickfont=dict(family=FONT_MONO, size=13, color=C['axis'])),
         legend=dict(orientation='h', yanchor='bottom', y=1.01, xanchor='right', x=1,
-                    font=dict(size=10))
+                    font=dict(size=13))
     )
     return fig
 
@@ -129,9 +168,16 @@ def chart_drawdowns(fund_df: pd.DataFrame) -> go.Figure:
         line=dict(color=C['red'], width=1.5),
         hovertemplate='%{y:.2f}%<extra>Drawdown</extra>'
     ))
-    _apply_base(fig, yaxis_title='Drawdown (%)',
-                yaxis=dict(ticksuffix='%', gridcolor=C['grid'],
-                           tickfont=dict(family=FONT_MONO, size=10, color=C['muted'])))
+    _tv, _tt = _date_ticks(fund_df)
+    _ymin = float(np.min(dd)) if len(dd) else -1.0
+    _apply_base(fig,
+                xaxis=dict(tickmode='array', tickangle=0, tickvals=_tv, ticktext=_tt,
+                           gridcolor=C['grid'], linecolor=C['border'], zeroline=False,
+                           tickfont=dict(family=FONT_MONO, size=13, color=C['axis'])),
+                yaxis=dict(title='Drawdown (%)', ticksuffix='%', gridcolor=C['grid'],
+                           range=[_ymin * 1.08, 0], autorange=False,
+                           tickfont=dict(family=FONT_MONO, size=13, color=C['axis']),
+                           title_font=dict(family=FONT_UI, size=14, color=C['axis'])))
     return fig
 
 
@@ -148,8 +194,12 @@ def chart_monthly_bars(fund_df: pd.DataFrame) -> go.Figure:
         hovertemplate='%{y:.2f}%<extra></extra>'
     ))
     _apply_base(fig, yaxis_title='Monthly Return (%)',
+                xaxis=dict(tickmode='array', tickangle=0, tickvals=_date_ticks(fund_df)[0],
+                           ticktext=_date_ticks(fund_df)[1],
+                           gridcolor=C['grid'], linecolor=C['border'], zeroline=False,
+                           tickfont=dict(family=FONT_MONO, size=13, color=C['axis'])),
                 yaxis=dict(ticksuffix='%', gridcolor=C['grid'],
-                           tickfont=dict(family=FONT_MONO, size=10, color=C['muted'])),
+                           tickfont=dict(family=FONT_MONO, size=13, color=C['axis'])),
                 bargap=0.1)
     return fig
 
@@ -189,8 +239,27 @@ def chart_histogram(fund_df: pd.DataFrame, outliers_df: pd.DataFrame | None = No
     if outliers_df is not None and len(outliers_df) > 0:
         for r in outliers_df['ret']:
             fig.add_vline(x=r, line_color=C['gold'], line_dash='dot', line_width=1.2)
+        # legend entry so the dotted lines are explained
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None], mode='lines',
+            line=dict(color=C['gold'], dash='dot', width=1.2),
+            name='≥3σ Outlier'
+        ))
 
     fig.update_layout(showlegend=True, barmode='overlay')
+
+    # quick-read distribution stats in the open teal space (white)
+    sk = skewness(rets)
+    ku = excess_kurtosis(rets)
+    fig.add_annotation(
+        xref='paper', yref='paper', x=0.015, y=0.98,
+        xanchor='left', yanchor='top', align='left', showarrow=False,
+        text=(f"Mean   {m:+.2f}%<br>"
+              f"Skew   {sk:+.2f}<br>"
+              f"Kurt   {ku:+.2f}"),
+        font=dict(family=FONT_MONO, size=14, color='#FFFFFF')
+    )
+
     _apply_base(fig,
         xaxis_title='Monthly Return (%)', yaxis_title='Frequency',
         legend=dict(orientation='h', yanchor='bottom', y=1.01, x=0),
@@ -235,12 +304,15 @@ def chart_acf(fund_df: pd.DataFrame) -> go.Figure:
 
     # Confidence bands
     fig.add_hrect(y0=-conf, y1=conf, fillcolor=C['accent_lt'],
-                  line_width=0, annotation_text='95% CI')
+                  line_width=0, annotation_text='95% CI',
+                  annotation_position='top right',
+                  annotation_font=dict(size=12, color=C['text']))
 
-    colors = [C['accent'] if abs(a) > conf else C['muted'] for a in ac]
+    colors = ['rgba(255,210,74,0.65)' if abs(a) > conf else C['accent_lt'] for a in ac]
     fig.add_trace(go.Bar(
         x=lags, y=ac,
         marker_color=colors,
+        marker_line_color=C['accent'], marker_line_width=0.8,
         hovertemplate='Lag %{x}: %{y:.4f}<extra></extra>'
     ))
     fig.add_hline(y=0, line_color=C['border'], line_width=1)
@@ -248,7 +320,7 @@ def chart_acf(fund_df: pd.DataFrame) -> go.Figure:
     _apply_base(fig,
         xaxis_title='Lag (months)', yaxis_title='Autocorrelation',
         xaxis=dict(tickvals=lags, gridcolor=C['grid'],
-                   tickfont=dict(family=FONT_MONO, size=10, color=C['muted'])),
+                   tickfont=dict(family=FONT_MONO, size=13, color=C['axis'])),
     )
     return fig
 
@@ -279,21 +351,21 @@ def chart_calendar_heatmap(fund_df: pd.DataFrame) -> go.Figure:
         y=MN,
         text=text,
         texttemplate='%{text}',
-        textfont=dict(family=FONT_MONO, size=9),
+        textfont=dict(family=FONT_MONO, size=11),
         colorscale=[[0.0, '#c0182a'], [0.5, '#f4f7fb'], [1.0, '#0a7a50']],
         zmid=0,
         showscale=True,
         hovertemplate='%{y} %{x}: %{text}<extra></extra>',
-        colorbar=dict(ticksuffix='%', tickfont=dict(family=FONT_MONO, size=9))
+        colorbar=dict(ticksuffix='%', tickfont=dict(family=FONT_MONO, size=11))
     ))
 
     fig.update_layout(
-        paper_bgcolor=C['bg'],
-        plot_bgcolor=C['surface'],
-        font=dict(family=FONT_UI, size=10, color=C['text']),
+        paper_bgcolor='#FFFFFF',
+        plot_bgcolor='#FFFFFF',
+        font=dict(family=FONT_UI, size=13, color=C['axis']),
         margin=dict(l=48, r=24, t=24, b=36),
-        xaxis=dict(tickfont=dict(family=FONT_MONO, size=9, color=C['muted'])),
-        yaxis=dict(tickfont=dict(family=FONT_UI, size=10, color=C['text'])),
+        xaxis=dict(tickfont=dict(family=FONT_MONO, size=11, color=C['axis'])),
+        yaxis=dict(tickfont=dict(family=FONT_UI, size=13, color=C['axis'])),
         height=400,
     )
     return fig
@@ -328,9 +400,13 @@ def chart_rolling(fund_df: pd.DataFrame, metric: str = 'roll_ret') -> go.Figure:
                                  hovertemplate=f'%{{y:.3f}}{suffix}<extra></extra>'))
         fig.add_hline(y=0, line_color=C['border'], line_width=1)
 
+    _tv, _tt = _date_ticks(roll)
     _apply_base(fig, yaxis_title=title,
+                xaxis=dict(tickmode='array', tickangle=0, tickvals=_tv, ticktext=_tt,
+                           gridcolor=C['grid'], linecolor=C['border'], zeroline=False,
+                           tickfont=dict(family=FONT_MONO, size=13, color=C['axis'])),
                 yaxis=dict(ticksuffix=suffix, gridcolor=C['grid'],
-                           tickfont=dict(family=FONT_MONO, size=10, color=C['muted'])))
+                           tickfont=dict(family=FONT_MONO, size=13, color=C['axis'])))
     return fig
 
 
@@ -369,6 +445,25 @@ def chart_regression(reg_result: dict, fund_name: str, bm_name: str) -> go.Figur
         hoverinfo='skip'
     ))
 
+    # Piecewise beta lines: β⁺ over BM-up months, β⁻ over BM-down months
+    bu, bd = reg_result.get('beta_up'), reg_result.get('beta_dn')
+    ux, uy = reg_result['up_x'], reg_result['up_y']
+    dx, dy = reg_result['dn_x'], reg_result['dn_y']
+    if bu is not None and len(ux) > 1:
+        a_up = float(np.mean(uy) - bu * np.mean(ux))
+        xs = np.linspace(0.0, float(np.max(ux)), 50)
+        fig.add_trace(go.Scatter(
+            x=xs, y=a_up + bu * xs, mode='lines',
+            line=dict(color=C['green'], width=2, dash='dash'),
+            name=f'β⁺ = {bu:.2f}', hoverinfo='skip'))
+    if bd is not None and len(dx) > 1:
+        a_dn = float(np.mean(dy) - bd * np.mean(dx))
+        xs = np.linspace(float(np.min(dx)), 0.0, 50)
+        fig.add_trace(go.Scatter(
+            x=xs, y=a_dn + bd * xs, mode='lines',
+            line=dict(color=C['red'], width=2, dash='dash'),
+            name=f'β⁻ = {bd:.2f}', hoverinfo='skip'))
+
     # Zero lines
     fig.add_hline(y=0, line_color=C['border'], line_width=1)
     fig.add_vline(x=0, line_color=C['border'], line_width=1)
@@ -404,7 +499,7 @@ def chart_seasonality_monthly(seas: dict) -> go.Figure:
     fig.add_hline(y=0, line_color=C['border'], line_width=1)
     _apply_base(fig, yaxis_title='Average Monthly Return (%)',
                 yaxis=dict(ticksuffix='%', gridcolor=C['grid'],
-                           tickfont=dict(family=FONT_MONO, size=10, color=C['muted'])))
+                           tickfont=dict(family=FONT_MONO, size=13, color=C['axis'])))
     return fig
 
 
@@ -423,5 +518,45 @@ def chart_seasonality_quarterly(seas: dict) -> go.Figure:
     fig.add_hline(y=0, line_color=C['border'], line_width=1)
     _apply_base(fig, yaxis_title='Average Quarterly Return (%)',
                 yaxis=dict(ticksuffix='%', gridcolor=C['grid'],
-                           tickfont=dict(family=FONT_MONO, size=10, color=C['muted'])))
+                           tickfont=dict(family=FONT_MONO, size=13, color=C['axis'])))
+    return fig
+
+
+# ─── BEST / WORST MARKET MONTHS — CO-MOVEMENT ─────────────────────────────────
+
+def chart_best_worst(fund_df: pd.DataFrame,
+                     mkt_df: pd.DataFrame, mkt_name: str,
+                     alt_df: pd.DataFrame, alt_name: str,
+                     n: int = 10, worst: bool = True) -> go.Figure:
+    """The market's worst/best N months with the strategy's and an alternative
+    index's concurrent returns — a tail co-movement (correlation) view."""
+    m = fund_df[['year', 'month', 'ret']].rename(columns={'ret': 'fund'})
+    m = m.merge(mkt_df[['year', 'month', 'ret']].rename(columns={'ret': 'mkt'}),
+                on=['year', 'month'], how='inner')
+    m = m.merge(alt_df[['year', 'month', 'ret']].rename(columns={'ret': 'alt'}),
+                on=['year', 'month'], how='inner')
+    if m.empty:
+        return go.Figure()
+    m = m.nsmallest(n, 'mkt') if worst else m.nlargest(n, 'mkt')  # most extreme first
+    labels = [f"{MN[int(r.month) - 1]} {int(r.year)}" for r in m.itertuples()]
+
+    fig = go.Figure()
+    series = [('Strategy', m['fund'].values, C['accent']),
+              (mkt_name,    m['mkt'].values,  C['gold']),
+              (alt_name,    m['alt'].values,  '#7FD4FF')]
+    for name, vals, color in series:
+        fig.add_trace(go.Bar(
+            y=labels, x=vals, orientation='h', name=name,
+            marker_color=color, marker_line_color=C['surface'], marker_line_width=0.5,
+            hovertemplate='%{x:.2f}%<extra>' + name + '</extra>'))
+    fig.update_layout(showlegend=True, barmode='group', bargap=0.28,
+                      legend=dict(orientation='h', yanchor='bottom', y=1.01, x=0))
+    _apply_base(fig,
+        xaxis=dict(title='Return (%)', ticksuffix='%', gridcolor=C['grid'],
+                   zeroline=True, zerolinecolor=C['border'], zerolinewidth=1.5,
+                   tickfont=dict(family=FONT_MONO, size=13, color=C['axis']),
+                   title_font=dict(family=FONT_UI, size=14, color=C['axis'])),
+        yaxis=dict(autorange='reversed',
+                   tickfont=dict(family=FONT_MONO, size=12, color=C['axis'])),
+        height=440)
     return fig

@@ -4,6 +4,7 @@ Pure functions, no Streamlit dependencies. All calculations match the HTML versi
 """
 
 import re
+import warnings
 import numpy as np
 import pandas as pd
 from scipy import stats as scipy_stats
@@ -274,9 +275,15 @@ def normality_tests(rets: np.ndarray) -> dict:
         sw_stat, sw_p = scipy_stats.shapiro(rets)
         results['sw'] = {'stat': float(sw_stat), 'pval': float(sw_p), 'name': 'Shapiro-Wilk'}
 
-    # Anderson-Darling (use significance_level method to avoid future deprecation)
+    # Anderson-Darling. scipy 1.17+ emits a FutureWarning nudging toward an
+    # explicit `method`, but specifying one changes the result object from
+    # `critical_values` to `pvalue` and would alter this test's logic. We keep
+    # the statistic-vs-5%-critical-value test and silence the cosmetic warning;
+    # the try/except still degrades gracefully if 1.19 removes critical_values.
     try:
-        ad_result = scipy_stats.anderson(rets, dist='norm')
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', FutureWarning)
+            ad_result = scipy_stats.anderson(rets, dist='norm')
         ad_stat = float(ad_result.statistic)
         # critical_values[2] is the 5% significance level
         ad_crit = float(ad_result.critical_values[2])
@@ -289,10 +296,23 @@ def normality_tests(rets: np.ndarray) -> dict:
         'name': 'Anderson-Darling'
     }
 
-    # Kolmogorov-Smirnov
-    ks_stat, ks_p = scipy_stats.kstest(rets, 'norm',
-                                        args=(np.mean(rets), np.std(rets, ddof=1)))
-    results['ks'] = {'stat': float(ks_stat), 'pval': float(ks_p), 'name': 'Kolmogorov-Smirnov'}
+    # Kolmogorov-Smirnov vs a fitted normal.
+    # Computed directly rather than via scipy_stats.kstest(rets, <callable cdf>):
+    # on some scipy 1.18 builds (notably macOS arm64) kstest routes a callable
+    # CDF through an array-API path that crashes ("ndtr() takes 1-2 args but 3").
+    # This is mathematically identical (empirical CDF vs fitted normal CDF) and
+    # platform-independent — only norm.cdf on an array and kstwo.sf on scalars.
+    _r = np.asarray(rets, dtype=float)
+    _r = _r[~np.isnan(_r)]
+    _n = len(_r)
+    _mu, _sigma = float(np.mean(_r)), float(np.std(_r, ddof=1))
+    _z = np.sort((_r - _mu) / _sigma)
+    _cdf = scipy_stats.norm.cdf(_z)
+    _d_plus = np.max(np.arange(1, _n + 1) / _n - _cdf)
+    _d_minus = np.max(_cdf - np.arange(0, _n) / _n)
+    ks_stat = float(max(_d_plus, _d_minus))
+    ks_p = float(scipy_stats.kstwo.sf(ks_stat, _n))
+    results['ks'] = {'stat': ks_stat, 'pval': ks_p, 'name': 'Kolmogorov-Smirnov'}
 
     return results
 
