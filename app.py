@@ -17,17 +17,18 @@ from analytics import (
     acf, acf_conf_band, rolling_metrics, parse_uploaded_file,
     MSCI_DF, AGG_DF,
 )
+from pdf_extract import extract_return_series
 from charts import (
     chart_cumulative, chart_drawdowns, chart_monthly_bars,
     chart_histogram, chart_qq, chart_acf, chart_calendar_heatmap,
     chart_rolling, chart_regression, chart_seasonality_monthly,
-    chart_seasonality_quarterly, MN,
+    chart_seasonality_quarterly, chart_best_worst, MN,
 )
 
 # ─── PAGE CONFIG ──────────────────────────────────────────────────────────────
 
 st.set_page_config(
-    page_title='Meatgrinder',
+    page_title='Argus',
     page_icon='📊',
     layout='wide',
     initial_sidebar_state='collapsed',
@@ -46,7 +47,7 @@ st.markdown("""
 
 /* ── Confirmed working: page background and layout ── */
 .stApp {
-  background: #F7F5F0 !important;
+  background: #F1F6F6 !important;
 }
 .main .block-container {
   padding: 0 0 80px 0 !important;
@@ -55,33 +56,82 @@ st.markdown("""
 
 /* ── Hide Streamlit chrome ── */
 #MainMenu, footer { visibility: hidden; }
+[data-testid="stToolbar"]        { display: none !important; }
+[data-testid="stDecoration"]     { display: none !important; }
+[data-testid="stStatusWidget"]   { display: none !important; }
 [data-testid="stSidebar"]        { display: none !important; }
 [data-testid="collapsedControl"] { display: none !important; }
 
 /* ── Controls area — give it a white strip ── */
 [data-testid="stHorizontalBlock"]:first-of-type {
   background: #FFFFFF;
-  padding: 12px 40px;
-  border-bottom: 1px solid #E0DDD6;
+  padding: 2px 40px 6px;
+  border-bottom: 3px solid #006B7A;
   gap: 24px !important;
+}
+
+/* Input section header */
+.mg-input-hdr {
+  font-family: 'Inter', sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  color: #006B7A;
+  letter-spacing: -0.5px;
+  background: #FFFFFF;
+  padding: 10px 40px 0;
+}
+
+/* Outlier toggle — teal active state to match the buttons */
+[data-baseweb="checkbox"] [aria-checked="true"] {
+  background-color: #006B7A !important;
+  border-color: #006B7A !important;
+}
+
+/* Compact the file uploader: hide the limit caption, shrink to the button */
+[data-testid="stFileUploaderDropzoneInstructions"] { display: none !important; }
+[data-testid="stFileUploader"] { min-width: 0 !important; width: fit-content !important; }
+[data-testid="stFileUploaderDropzone"],
+section[data-testid="stFileUploaderDropzone"] {
+  padding: 6px 10px !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  width: fit-content !important;
+}
+
+/* Clear Data button — solid teal, thick border, sized to content */
+[data-testid="stButton"] button {
+  background: #006B7A !important;
+  color: #FFFFFF !important;
+  border: 2px solid #005561 !important;
+  border-radius: 6px !important;
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 600 !important;
+  font-size: 13px !important;
+  padding: 8px 24px !important;
+}
+[data-testid="stButton"] button:hover {
+  background: #005561 !important;
+  border-color: #003E47 !important;
+  color: #FFFFFF !important;
 }
 
 /* ── Widget label text ── */
 label[data-testid="stWidgetLabel"] p {
   font-family: 'Inter', sans-serif !important;
-  font-size: 10px !important;
-  font-weight: 600 !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
   text-transform: uppercase !important;
   letter-spacing: 1.2px !important;
-  color: #888880 !important;
+  color: #2A4F57 !important;
 }
 
-/* ── Tabs — these selectors are confirmed in ST 1.58 ── */
+/* ── Tabs — bordered, clearly-clickable boxes ── */
 .stTabs [data-baseweb="tab-list"] {
   background: #FFFFFF !important;
-  border-bottom: 1px solid #E0DDD6 !important;
-  padding: 0 40px !important;
-  gap: 0 !important;
+  border-bottom: 1px solid #D2E0E0 !important;
+  padding: 16px 40px !important;
+  gap: 8px !important;
+  flex-wrap: wrap !important;
 }
 .stTabs [data-baseweb="tab"] {
   font-family: 'Inter', sans-serif !important;
@@ -89,17 +139,22 @@ label[data-testid="stWidgetLabel"] p {
   font-weight: 600 !important;
   letter-spacing: 1px !important;
   text-transform: uppercase !important;
-  color: #999990 !important;
-  padding: 14px 20px !important;
-  border-radius: 0 !important;
-  border-bottom: 3px solid transparent !important;
-  background: transparent !important;
+  color: #4A4943 !important;
+  padding: 9px 16px !important;
+  border-radius: 6px !important;
+  border: 1px solid #CFCAC0 !important;
+  background: #FFFFFF !important;
   margin: 0 !important;
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease !important;
+}
+.stTabs [data-baseweb="tab"]:hover {
+  border-color: #006B7A !important;
+  color: #006B7A !important;
 }
 .stTabs [aria-selected="true"] {
-  color: #1A1A1A !important;
-  border-bottom: 3px solid #1A1A1A !important;
-  background: transparent !important;
+  color: #FFFFFF !important;
+  background: #006B7A !important;
+  border: 1px solid #006B7A !important;
 }
 .stTabs [data-baseweb="tab-highlight"] { display: none !important; }
 .stTabs [data-baseweb="tab-border"]    { display: none !important; }
@@ -111,7 +166,7 @@ label[data-testid="stWidgetLabel"] p {
 
 /* Top bar */
 .mg-topbar {
-  background: #1A1A1A;
+  background: #006B7A;
   height: 54px;
   padding: 0 40px;
   display: flex;
@@ -121,16 +176,16 @@ label[data-testid="stWidgetLabel"] p {
 }
 .mg-topbar .brand {
   font-family: 'Inter', sans-serif;
-  font-size: 13px;
+  font-size: 20px;
   font-weight: 700;
-  letter-spacing: 4px;
+  letter-spacing: 5px;
   color: #FFFFFF;
   text-transform: uppercase;
 }
 .mg-topbar .info {
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
-  color: #666;
+  color: #BFE4E4;
   letter-spacing: 0.5px;
 }
 
@@ -138,7 +193,7 @@ label[data-testid="stWidgetLabel"] p {
 .mg-id {
   padding: 20px 40px 16px;
   background: #FFFFFF;
-  border-bottom: 1px solid #E0DDD6;
+  border-bottom: 1px solid #D2E0E0;
 }
 .mg-id .fname {
   font-family: 'Inter', sans-serif;
@@ -151,14 +206,14 @@ label[data-testid="stWidgetLabel"] p {
 .mg-id .fmeta {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
-  color: #999990;
+  color: #6A6960;
   letter-spacing: 0.3px;
 }
 
 /* Diagnostic strip */
 .mg-diag {
-  background: #F0EDE6;
-  border-bottom: 1px solid #E0DDD6;
+  background: #EAF2F2;
+  border-bottom: 1px solid #D2E0E0;
   padding: 8px 40px;
   display: flex;
   gap: 48px;
@@ -171,7 +226,7 @@ label[data-testid="stWidgetLabel"] p {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 1.2px;
-  color: #AAA898;
+  color: #5F5E56;
 }
 .mg-diag .d-val {
   font-family: 'JetBrains Mono', monospace;
@@ -194,12 +249,12 @@ label[data-testid="stWidgetLabel"] p {
 .mg-stats {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  background: #1A1A1A;
-  border-bottom: 3px solid #1A1A1A;
+  background: #006B7A;
+  border-bottom: 3px solid #006B7A;
 }
 .mg-stat {
   padding: 20px 24px 18px;
-  border-right: 1px solid #2A2A2A;
+  border-right: 1px solid #1A8290;
 }
 .mg-stat:last-child { border-right: none; }
 .mg-stat .s-lbl {
@@ -208,7 +263,7 @@ label[data-testid="stWidgetLabel"] p {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 1.5px;
-  color: #666;
+  color: #BFE4E4;
   margin-bottom: 8px;
 }
 .mg-stat .s-val {
@@ -220,7 +275,7 @@ label[data-testid="stWidgetLabel"] p {
 }
 .mg-stat .s-val.pos { color: #3DD68C; }
 .mg-stat .s-val.neg { color: #FF6B6B; }
-.mg-stat .s-val.dim { color: #AAAAAA; }
+.mg-stat .s-val.dim { color: #CFE2E2; }
 
 /* Section heading */
 .mg-sh {
@@ -229,9 +284,9 @@ label[data-testid="stWidgetLabel"] p {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1.5px;
-  color: #999990;
+  color: #006B7A;
   padding-bottom: 10px;
-  border-bottom: 1px solid #E0DDD6;
+  border-bottom: 1px solid #D2E0E0;
   margin-bottom: 16px;
   margin-top: 0;
 }
@@ -242,8 +297,8 @@ table.mg-tbl {
   border-collapse: collapse;
   font-family: 'JetBrains Mono', monospace;
   font-size: 12px;
-  border: 1px solid #E0DDD6;
-  border-radius: 4px;
+  border: 2px solid #006B7A;
+  border-radius: 6px;
   overflow: hidden;
   background: #FFFFFF;
 }
@@ -253,30 +308,34 @@ table.mg-tbl th {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1.2px;
-  color: #999990;
-  background: #F7F5F0;
+  color: #005561;
+  background: #EAF2F2;
   padding: 10px 14px;
-  text-align: left;
-  border-bottom: 1px solid #E0DDD6;
+  text-align: right;
+  border-bottom: 1px solid #D2E0E0;
   white-space: nowrap;
 }
 table.mg-tbl td {
   padding: 8px 14px;
-  border-bottom: 1px solid #F0EDE6;
+  border-bottom: 1px solid #E4EFEF;
   color: #1A1A1A;
+  text-align: right;
 }
 table.mg-tbl tr:last-child td { border-bottom: none; }
-table.mg-tbl tr:hover td      { background: #FAFAF8; }
+table.mg-tbl tr:hover td      { background: #EFF6F6; }
 table.mg-tbl td.pos { color: #1A8A50; font-weight: 500; }
 table.mg-tbl td.neg { color: #CC2222; font-weight: 500; }
 table.mg-tbl td.gld { color: #9A6800; font-weight: 500; }
-table.mg-tbl td.lbl { color: #888880; }
+table.mg-tbl td.lbl { color: #5F5E56; }
+table.mg-tbl th:first-child,
+table.mg-tbl td:first-child { text-align: left; }
 
 /* Note text */
 .mg-note {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  color: #AAAAAA;
+  font-size: 12px;
+  color: #2A4F57;
+  font-weight: 500;
   margin-top: 8px;
 }
 
@@ -314,7 +373,7 @@ table.mg-tbl td.lbl { color: #888880; }
 .mg-land p {
   font-family: 'JetBrains Mono', monospace;
   font-size: 12px;
-  color: #999990;
+  color: #6A6960;
   letter-spacing: 0.5px;
   margin-bottom: 32px;
 }
@@ -334,7 +393,7 @@ table.mg-tbl td.lbl { color: #888880; }
   letter-spacing: 1.5px;
   text-transform: uppercase;
   color: #FFFFFF;
-  background: #1A1A1A;
+  background: #006B7A;
   padding: 3px 8px;
   border-radius: 2px;
   vertical-align: middle;
@@ -399,7 +458,7 @@ def _check_password():
     _, col, _ = st.columns([1, 1.6, 1])
     with col:
         st.markdown("""
-        <div style="background:#006B7A; min-height:58vh;
+        <div style="background:#006B7A; min-height:40vh;
                     display:flex; flex-direction:column;
                     align-items:center; justify-content:center;
                     text-align:center;
@@ -409,7 +468,7 @@ def _check_password():
                       letter-spacing:12px; color:#FFFFFF; text-transform:uppercase;
                       white-space:nowrap; line-height:1;
                       text-shadow:0 2px 24px rgba(0,0,0,0.18);">
-            MEATGRINDER
+            ARGUS
           </div>
           <div style="font-family:'Inter',sans-serif; font-size:18px; font-weight:600;
                       color:#FFFFFF; letter-spacing:7px; text-transform:uppercase;
@@ -445,16 +504,85 @@ for k, v in {
     'fund_df': None, 'fund_name': 'Fund',
     'outliers_df': None, 'trimmed': False,
     'parse_diag': None, 'bm_choice': 'MSCI World Hedged USD',
+    'pdf_candidates': None, 'pdf_warns': None, 'pdf_sig': None,
 }.items():
     if k not in st.session_state:
         st.session_state[k] = v
+
+
+# ─── PDF EXTRACTION HELPERS ───────────────────────────────────────────────────
+
+def _load_pdf_file(up):
+    """Extract candidate return series from a PDF, cached by file signature."""
+    sig = f"{up.name}:{getattr(up, 'size', 0)}"
+    if st.session_state.get('pdf_sig') != sig:
+        cands, warns = extract_return_series(up)
+        st.session_state['pdf_candidates'] = cands
+        st.session_state['pdf_warns'] = warns
+        st.session_state['pdf_sig'] = sig
+
+
+def _clear_pdf_state():
+    for k in ('pdf_candidates', 'pdf_warns', 'pdf_sig'):
+        st.session_state[k] = None
+
+
+def _render_pdf_picker():
+    """Show return series detected in a PDF; preview and load on confirm."""
+    cands = st.session_state.get('pdf_candidates')
+    if cands is None:
+        return
+    for w in (st.session_state.get('pdf_warns') or []):
+        st.warning(w)
+    if not cands:
+        return
+
+    st.markdown('<div class="mg-input-hdr">Returns found in PDF</div>',
+                unsafe_allow_html=True)
+    labels = [f"{c['label']} — {c['n']} months (page {c['page']})" for c in cands]
+    idx = st.selectbox("Detected return series", range(len(cands)),
+                       format_func=lambda i: labels[i], key="pdf_pick")
+    sel = cands[idx]
+
+    prev = sel['df'].copy()
+    prev['ret'] = prev['ret'].map(lambda v: f"{v:+.2f}%")
+    prev = prev.rename(columns={'year': 'Year', 'month': 'Month', 'ret': 'Return'})
+
+    cprev, cmeta = st.columns([2, 3])
+    with cprev:
+        st.dataframe(prev, height=260, hide_index=True, use_container_width=True)
+    with cmeta:
+        name = st.text_input("Fund name", value=sel['label'], key="pdf_name")
+        st.caption(f"{sel['n']} monthly returns · "
+                   f"{int(sel['df'].iloc[0]['year'])}\u2013"
+                   f"{int(sel['df'].iloc[-1]['year'])}")
+        lc, rc, _ = st.columns([1, 1, 2])
+        with lc:
+            if st.button("Load into Argus", type="primary", key="pdf_load"):
+                df = sel['df'][['year', 'month', 'ret']].copy()
+                st.session_state.update({
+                    'fund_df': df,
+                    'outliers_df': compute_outliers(df),
+                    'fund_name': name,
+                    'parse_diag': {
+                        'date_col': 'PDF deck', 'date_format': 'year \u00d7 month grid',
+                        'ret_col': 'PDF deck', 'ret_format': 'percent',
+                        'n_parsed': sel['n'], 'n_dropped': 0, 'failed_dates': [],
+                    },
+                })
+                _clear_pdf_state()
+                st.rerun()
+        with rc:
+            if st.button("Cancel", key="pdf_cancel"):
+                _clear_pdf_state()
+                st.rerun()
 
 
 # ─── TOP BAR ──────────────────────────────────────────────────────────────────
 
 st.markdown("""
 <div class="mg-topbar">
-  <div class="brand">Meatgrinder</div>
+  <div class="brand">Argus</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -464,41 +592,41 @@ st.markdown("""
 if st.session_state['fund_df'] is None:
 
     # Centered layout: heading + uploader + requirements box, all together
-    _, col_up, _ = st.columns([1, 1.4, 1])
+    _, col_up, _ = st.columns([1, 3, 1])
     with col_up:
         st.markdown("""
-        <div style="padding: 60px 0 32px; text-align: center;">
-          <div style="font-family: 'Inter', sans-serif; font-size: 36px; font-weight: 700;
+        <div style="padding: 22px 0 16px; text-align: center;">
+          <div style="font-family: 'Inter', sans-serif; font-size: 36px; font-weight: 700; white-space: nowrap;
                       color: #1A1A1A; margin-bottom: 8px;">
             Upload a fund file to begin
           </div>
           <div style="font-family: 'Inter', sans-serif; font-size: 16px;
-                      color: #666660; margin-bottom: 32px;">
-            Drag and drop or click to select a CSV or Excel file
+                      color: #666660; margin-bottom: 18px;">
+            Drag and drop or click to select a CSV, Excel, or PDF file
           </div>
         </div>
         """, unsafe_allow_html=True)
 
-        up = st.file_uploader("", type=['csv','xlsx','xls'], label_visibility="collapsed")
+        up = st.file_uploader("", type=['csv','xlsx','xls','pdf'], label_visibility="collapsed")
 
         st.markdown("""
-        <div style="margin-top: 32px; border: 1px solid #E0DDD6; border-radius: 6px;
+        <div style="margin-top: 18px; border: 1px solid #D2E0E0; border-radius: 6px;
                     background: #FFFFFF; padding: 24px 28px;">
           <div style="font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 700;
                       text-transform: uppercase; letter-spacing: 1.5px; color: #1A1A1A;
-                      margin-bottom: 16px; border-bottom: 1px solid #E0DDD6; padding-bottom: 10px;">
+                      margin-bottom: 16px; border-bottom: 1px solid #D2E0E0; padding-bottom: 10px;">
             File Requirements
           </div>
           <div style="font-family: 'Inter', sans-serif; font-size: 14px; color: #333330;
                       line-height: 2;">
-            <div>1. &nbsp; Format: CSV or Excel (.csv, .xlsx, .xls)</div>
+            <div>1. &nbsp; Format: CSV, Excel, or PDF (.csv, .xlsx, .xls, .pdf)</div>
             <div>2. &nbsp; One column of dates (any standard date format)</div>
             <div>3. &nbsp; One column of monthly returns (% or decimal — auto-detected)</div>
-            <div>4. &nbsp; Column headers optional — app detects columns automatically</div>
+            <div>4. &nbsp; PDF decks: returns are pulled from the track-record table, with a preview to confirm</div>
             <div>5. &nbsp; Minimum 6 months of data required</div>
           </div>
-          <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #E0DDD6;
-                      font-family: 'Inter', sans-serif; font-size: 13px; color: #888880;">
+          <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #D2E0E0;
+                      font-family: 'Inter', sans-serif; font-size: 13px; color: #5F5E56;">
             Benchmarks (MSCI World Hedged, Bloomberg Global Agg) and TB3MS risk-free rates
             are built in — no need to upload them.
           </div>
@@ -506,58 +634,65 @@ if st.session_state['fund_df'] is None:
         """, unsafe_allow_html=True)
 
     if up is not None:
-        df, err, diag = parse_uploaded_file(up)
-        if err:
-            st.error(err)
+        if up.name.lower().endswith('.pdf'):
+            _load_pdf_file(up)
         else:
-            st.session_state.update({
-                'fund_df': df,
-                'outliers_df': compute_outliers(df),
-                'parse_diag': diag,
-            })
-            st.rerun()
+            df, err, diag = parse_uploaded_file(up)
+            if err:
+                st.error(err)
+            else:
+                st.session_state.update({
+                    'fund_df': df,
+                    'outliers_df': compute_outliers(df),
+                    'parse_diag': diag,
+                })
+                st.rerun()
+
+    _render_pdf_picker()
     st.stop()
 
 
 # ─── CONTROLS BAR ─────────────────────────────────────────────────────────────
 
-c1, c2, c3, c4, c5 = st.columns([2, 1.4, 1.6, 1.2, 0.8])
+st.markdown('<div class="mg-input-hdr">Input</div>', unsafe_allow_html=True)
+
+c1, c5, c2, c4, _pad = st.columns([0.5, 0.5, 1.5, 1.3, 3.5])
 
 with c1:
-    new_up = st.file_uploader("Load New File", type=['csv','xlsx','xls'])
+    new_up = st.file_uploader("Load New File", type=['csv','xlsx','xls','pdf'])
     if new_up is not None:
-        df2, err2, diag2 = parse_uploaded_file(new_up)
-        if err2:
-            st.error(err2)
+        if new_up.name.lower().endswith('.pdf'):
+            _load_pdf_file(new_up)
         else:
-            st.session_state.update({
-                'fund_df': df2,
-                'outliers_df': compute_outliers(df2),
-                'parse_diag': diag2,
-            })
-            st.rerun()
+            df2, err2, diag2 = parse_uploaded_file(new_up)
+            if err2:
+                st.error(err2)
+            else:
+                st.session_state.update({
+                    'fund_df': df2,
+                    'outliers_df': compute_outliers(df2),
+                    'parse_diag': diag2,
+                })
+                st.rerun()
 
 with c2:
     fn = st.text_input("Fund Name", value=st.session_state['fund_name'])
     st.session_state['fund_name'] = fn
 
-with c3:
-    opts = ['MSCI World Hedged USD', 'Bloomberg Global Agg', 'None']
-    bm = st.selectbox("Benchmark", opts,
-                      index=opts.index(st.session_state['bm_choice']))
-    st.session_state['bm_choice'] = bm
-
 with c4:
+    st.markdown('<div style="height:26px;"></div>', unsafe_allow_html=True)
     tr = st.toggle("Exclude ≥3σ Outliers", value=st.session_state['trimmed'])
     st.session_state['trimmed'] = tr
 
 with c5:
-    st.write("")
-    st.write("")
-    if st.button("Clear Data", use_container_width=True):
+    st.markdown('<div style="height:26px;"></div>', unsafe_allow_html=True)
+    if st.button("Clear Data"):
         for k in ['fund_df','outliers_df','parse_diag']:
             st.session_state[k] = None
         st.rerun()
+
+
+_render_pdf_picker()
 
 
 # ─── RESOLVE DATA ─────────────────────────────────────────────────────────────
@@ -615,44 +750,6 @@ out_html  = (f'&nbsp;·&nbsp; <span style="color:#9A6800;font-weight:600">'
              f'{n_out} outlier{"s" if n_out!=1 else ""} detected</span>'
              if n_out > 0 else '')
 
-st.markdown(f"""
-<div class="mg-id">
-  <div class="fname">{fund_name}{trim_html}</div>
-  <div class="fmeta">
-    {date_range} &nbsp;·&nbsp; {n_obs} monthly observations
-    &nbsp;·&nbsp; {bm1_name or 'No benchmark'}
-    &nbsp;·&nbsp; Rf = TB3MS (FRED){out_html}
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
-# Diagnostic strip
-if diag:
-    failed = diag.get('failed_dates', [])
-    drop_color = '#CC2222' if diag.get('n_dropped', 0) > 0 else '#1A1A1A'
-    st.markdown(f"""
-<div class="mg-diag">
-  <div class="d-item"><div class="d-lbl">Date Column</div><div class="d-val">{diag.get('date_col','—')}</div></div>
-  <div class="d-item"><div class="d-lbl">Format</div><div class="d-val">{diag.get('date_format','—')}</div></div>
-  <div class="d-item"><div class="d-lbl">Return Column</div><div class="d-val">{diag.get('ret_col','—')}</div></div>
-  <div class="d-item"><div class="d-lbl">Return Scale</div><div class="d-val">{diag.get('ret_format','—')}</div></div>
-  <div class="d-item"><div class="d-lbl">Rows Parsed</div><div class="d-val">{diag.get('n_parsed','—')}</div></div>
-  <div class="d-item"><div class="d-lbl">Rows Dropped</div><div class="d-val" style="color:{drop_color}">{diag.get('n_dropped',0)}</div></div>
-  {f'<div class="d-item"><div class="d-lbl">Parse Warnings</div><div class="d-val" style="color:#CC2222">{len(failed)} failed dates</div></div>' if failed else ''}
-</div>
-""", unsafe_allow_html=True)
-
-# Outlier alert
-if n_out > 0 and outliers_df is not None:
-    out_list = ' · '.join(
-        f"{MN[int(r.month)-1]} {int(r.year)} ({r.ret:+.1f}%)"
-        for r in outliers_df.itertuples()
-    )
-    st.markdown(
-        f'<div class="mg-alert">⚡ <strong>Outlier Alert</strong> &nbsp;—&nbsp; {out_list}'
-        f'&nbsp; · &nbsp; Toggle "Exclude ≥3σ Outliers" above to recompute without these months.</div>',
-        unsafe_allow_html=True
-    )
 
 
 # ─── STAT BANNER ──────────────────────────────────────────────────────────────
@@ -676,11 +773,11 @@ st.markdown(f"""
   </div>
   <div class="mg-stat">
     <div class="s-lbl">Sharpe · Rf=TB3MS</div>
-    <div class="s-val dim">{_fmt(sh, 3, False)}</div>
+    <div class="s-val dim">{_fmt(sh, 2, False)}</div>
   </div>
   <div class="mg-stat">
     <div class="s-lbl">Sortino · Rf=TB3MS</div>
-    <div class="s-val dim">{_fmt(so, 3, False)}</div>
+    <div class="s-val dim">{_fmt(so, 2, False)}</div>
   </div>
   <div class="mg-stat">
     <div class="s-lbl">Max Drawdown</div>
@@ -688,7 +785,7 @@ st.markdown(f"""
   </div>
   <div class="mg-stat">
     <div class="s-lbl">Calmar Ratio</div>
-    <div class="s-val dim">{_fmt(ca, 3, False)}</div>
+    <div class="s-val dim">{_fmt(ca, 2, False)}</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -699,8 +796,59 @@ st.markdown(f"""
 tabs = st.tabs([
     "Summary", "Calendar", "Drawdowns", "Distribution",
     "Regression", "Rolling", "Seasonality", "Multi-Period",
-    "Macro Events", "Data",
+    "Macro Events", "Data", "Input",
 ])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 10 — INPUT
+# ══════════════════════════════════════════════════════════════════════════════
+
+with tabs[10]:
+    st.markdown('<div class="mg-sh">Input &amp; Parsing Diagnostics</div>', unsafe_allow_html=True)
+    st.markdown(f"""
+<div class="mg-id">
+  <div class="fname">{fund_name}{trim_html}</div>
+  <div class="fmeta">
+    {date_range} &nbsp;·&nbsp; {n_obs} monthly observations
+    &nbsp;·&nbsp; {bm1_name or 'No benchmark'}
+    &nbsp;·&nbsp; Rf = TB3MS (FRED){out_html}
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+    # Diagnostic strip
+    if diag:
+        failed = diag.get('failed_dates', [])
+        drop_color = '#CC2222' if diag.get('n_dropped', 0) > 0 else '#1A1A1A'
+        _rawfmt = diag.get('date_format', '') or ''
+        fmt_disp = _rawfmt
+        for _k, _v in (('%Y','YYYY'),('%y','YY'),('%m','MM'),('%b','Mon'),('%B','Month'),('%d','DD')):
+            fmt_disp = fmt_disp.replace(_k, _v)
+        fmt_disp = fmt_disp or '—'
+        st.markdown(f"""
+<div class="mg-diag">
+  <div class="d-item"><div class="d-lbl">Date Column</div><div class="d-val">{diag.get('date_col','—')}</div></div>
+  <div class="d-item"><div class="d-lbl">Format</div><div class="d-val">{fmt_disp}</div></div>
+  <div class="d-item"><div class="d-lbl">Return Column</div><div class="d-val">{diag.get('ret_col','—')}</div></div>
+  <div class="d-item"><div class="d-lbl">Return Scale</div><div class="d-val">{diag.get('ret_format','—')}</div></div>
+  <div class="d-item"><div class="d-lbl">Rows Parsed</div><div class="d-val">{diag.get('n_parsed','—')}</div></div>
+  <div class="d-item"><div class="d-lbl">Rows Dropped</div><div class="d-val" style="color:{drop_color}">{diag.get('n_dropped',0)}</div></div>
+  {f'<div class="d-item"><div class="d-lbl">Parse Warnings</div><div class="d-val" style="color:#CC2222">{len(failed)} failed dates</div></div>' if failed else ''}
+</div>
+""", unsafe_allow_html=True)
+
+    # Outlier alert
+    if n_out > 0 and outliers_df is not None:
+        out_list = ' · '.join(
+            f"{MN[int(r.month)-1]} {int(r.year)} ({r.ret:+.1f}%)"
+            for r in outliers_df.itertuples()
+        )
+        st.markdown(
+            f'<div class="mg-alert">⚡ <strong>Outlier Alert</strong> &nbsp;—&nbsp; {out_list}'
+            f'&nbsp; · &nbsp; Toggle "Exclude ≥3σ Outliers" above to recompute without these months.</div>',
+            unsafe_allow_html=True
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -722,16 +870,16 @@ with tabs[0]:
             ("Observations",       len(full_rets),                   len(trim_rets),                  False, 0,  False),
             ("Ann. Return",        geo_return(full_rets),            geo_return(trim_rets),            True,  2,  False),
             ("Ann. Volatility",    ann_vol(full_rets),              ann_vol(trim_rets),              False, 2,  False),
-            ("Sharpe (Rf=TB3MS)",  sharpe_with_rf(fund_df_raw),     sharpe_with_rf(fund_df),         False, 3,  False),
-            ("Sortino (Rf=TB3MS)", sortino_with_rf(fund_df_raw),    sortino_with_rf(fund_df),        False, 3,  False),
-            ("Calmar Ratio",       calmar(full_rets),               calmar(trim_rets),               False, 3,  False),
+            ("Sharpe (Rf=TB3MS)",  sharpe_with_rf(fund_df_raw),     sharpe_with_rf(fund_df),         False, 2,  False),
+            ("Sortino (Rf=TB3MS)", sortino_with_rf(fund_df_raw),    sortino_with_rf(fund_df),        False, 2,  False),
+            ("Calmar Ratio",       calmar(full_rets),               calmar(trim_rets),               False, 2,  False),
             ("Max Drawdown",       max_drawdown(full_rets),         max_drawdown(trim_rets),         True,  2,  True),
             ("Skewness",           skewness(full_rets),             skewness(trim_rets),             False, 4,  False),
             ("Excess Kurtosis",    excess_kurtosis(full_rets),      excess_kurtosis(trim_rets),      False, 4,  False),
             ("Jarque-Bera Stat",   jb_full,                         jb_trim,                         False, 2,  False),
             ("Best Month",         float(np.max(full_rets)),        float(np.max(trim_rets)),        True,  2,  False),
             ("Worst Month",        float(np.min(full_rets)),        float(np.min(trim_rets)),        True,  2,  True),
-            ("Avg Monthly Return", float(np.mean(full_rets)),       float(np.mean(trim_rets)),       True,  3,  False),
+            ("Avg Monthly Return", float(np.mean(full_rets)),       float(np.mean(trim_rets)),       True,  2,  False),
             ("Hit Rate",           float(np.sum(full_rets>0)/len(full_rets)*100),
                                    float(np.sum(trim_rets>0)/max(len(trim_rets),1)*100), False, 1, False),
             ("Up Months",          int(np.sum(full_rets > 0)),      int(np.sum(trim_rets > 0)),      False, 0,  False),
@@ -788,10 +936,10 @@ with tabs[0]:
             bm_defs = [
                 ('Ann. Return',     True,  2, False),
                 ('Ann. Volatility', False, 2, False),
-                ('Sharpe',          False, 3, False),
-                ('Sortino',         False, 3, False),
+                ('Sharpe',          False, 2, False),
+                ('Sortino',         False, 2, False),
                 ('Max Drawdown',    True,  2, True),
-                ('Calmar Ratio',    False, 3, False),
+                ('Calmar Ratio',    False, 2, False),
                 ('Skewness',        False, 4, False),
                 ('Excess Kurtosis', False, 4, False),
             ]
@@ -823,8 +971,60 @@ with tabs[0]:
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tabs[1]:
-    st.markdown('<div class="mg-sh">Monthly Return Calendar</div>', unsafe_allow_html=True)
-    st.plotly_chart(chart_calendar_heatmap(fund_df), use_container_width=True)
+    st.markdown('<div class="mg-sh">Monthly Return Track Record</div>', unsafe_allow_html=True)
+
+    _MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+    def _ret_lut(df):
+        return {(int(r.year), int(r.month)): float(r.ret) for r in df.itertuples()}
+    def _ytd(vals):
+        present = [v for v in vals if v is not None]
+        if not present:
+            return None
+        w = 1.0
+        for v in present:
+            w *= (1 + v / 100)
+        return (w - 1) * 100
+    def _heat(v, cap):
+        if v is None:
+            return 'background:#FFFFFF;'
+        t = max(-1.0, min(1.0, v / cap))
+        if t >= 0:
+            return f'background:rgba(26,138,80,{0.10 + 0.50 * t:.2f});'
+        return f'background:rgba(204,34,34,{0.10 + 0.50 * (-t):.2f});'
+
+    _cal_series = [(fund_name, fund_df), ('MSCI World Hdg', MSCI_DF), ('Bloomberg Agg', AGG_DF)]
+    _luts = [(nm, _ret_lut(d)) for nm, d in _cal_series]
+    _years = sorted({int(r.year) for r in fund_df.itertuples()})
+
+    _hd = 'background:#006B7A;color:#FFFFFF;padding:6px 6px;text-align:center;font-weight:600;'
+    th = (f'<th style="{_hd}text-align:left;"></th><th style="{_hd}text-align:left;"></th>')
+    for mn in _MONTHS:
+        th += f'<th style="{_hd}">{mn}</th>'
+    th += f'<th style="{_hd}">YTD</th>'
+
+    rows_html = ''
+    for yi, yr in enumerate(_years):
+        for si, (sname, lut) in enumerate(_luts):
+            tb = 'border-top:2px solid #006B7A;' if (si == 0 and yi > 0) else ''
+            yr_cell = str(yr) if si == 0 else ''
+            row = f'<tr><td style="text-align:left;font-weight:700;color:#1A1A1A;padding:3px 8px;{tb}">{yr_cell}</td>'
+            row += f'<td style="text-align:left;color:#1A1A1A;padding:3px 8px;{tb}">{sname}</td>'
+            mvals = []
+            for mo in range(1, 13):
+                v = lut.get((yr, mo))
+                mvals.append(v)
+                txt = f'{v:+.2f}%' if v is not None else ''
+                row += f'<td style="text-align:center;padding:3px 5px;color:#1A1A1A;{_heat(v, 6.0)}{tb}">{txt}</td>'
+            ytd = _ytd(mvals)
+            ytd_txt = f'{ytd:+.2f}%' if ytd is not None else ''
+            row += f'<td style="text-align:center;padding:3px 6px;font-weight:700;color:#1A1A1A;{_heat(ytd, 20.0)}{tb}">{ytd_txt}</td>'
+            row += '</tr>'
+            rows_html += row
+
+    cal_html = ('<div style="overflow-x:auto;"><table style="border-collapse:collapse;width:100%;'
+                "font-family:'JetBrains Mono',monospace;font-size:11px;\">"
+                f'<thead><tr>{th}</tr></thead><tbody>{rows_html}</tbody></table></div>')
+    st.markdown(cal_html, unsafe_allow_html=True)
     st.markdown('<div class="mg-sh" style="margin-top:8px;">Monthly Return Bars</div>', unsafe_allow_html=True)
     st.plotly_chart(chart_monthly_bars(fund_df), use_container_width=True)
 
@@ -837,9 +1037,58 @@ with tabs[2]:
     st.markdown('<div class="mg-sh">Drawdown Series</div>', unsafe_allow_html=True)
     st.plotly_chart(chart_drawdowns(fund_df), use_container_width=True)
 
-    st.markdown('<div class="mg-sh" style="margin-top:8px;">Top Drawdown Episodes</div>', unsafe_allow_html=True)
     episodes = top_drawdowns(fund_df)
-    ep_html = '<table class="mg-tbl"><thead><tr><th>#</th><th>Drawdown</th><th>Peak</th><th>Trough</th><th>Recovery</th><th>Peak→Trough</th><th>Trough→Rec.</th><th>Total</th></tr></thead><tbody>'
+
+    # ── Drawdown Analysis: Largest / Longest / Mean / Median summary ──
+    st.markdown('<div class="mg-sh" style="margin-top:8px;">Drawdown Analysis</div>', unsafe_allow_html=True)
+    if episodes:
+        import datetime as _dt
+        _MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+        def _pmd(s):
+            if not s or s in ('Start', 'Ongoing'):
+                return None
+            try:
+                mo, yr = s.split()
+                return _dt.date(int(yr), _MN.index(mo) + 1, 1)
+            except Exception:
+                return None
+        def _avg_date(strs, med=False):
+            ords = [d.toordinal() for d in (_pmd(s) for s in strs) if d]
+            if not ords:
+                return '—'
+            v = np.median(ords) if med else np.mean(ords)
+            d = _dt.date.fromordinal(int(round(v)))
+            return f"{_MN[d.month - 1]} {d.year}"
+        def _dur(e, key):
+            v = e[key]
+            return str(v) if v is not None else 'Ongoing'
+
+        largest = episodes[0]
+        longest = max(episodes, key=lambda e: e['total_months'] if e['total_months'] is not None else e['peak_to_trough'])
+        depths = [abs(e['drawdown']) for e in episodes]
+        p2t = [e['peak_to_trough'] for e in episodes]
+        t2r = [e['trough_to_recovery'] for e in episodes if e['trough_to_recovery'] is not None]
+        p2r = [e['total_months'] for e in episodes if e['total_months'] is not None]
+
+        da_rows = [
+            ('Drawdown %',             f"{abs(largest['drawdown']):.2f}", f"{abs(longest['drawdown']):.2f}", f"{np.mean(depths):.2f}", f"{np.median(depths):.2f}"),
+            ('Peak',                   largest['peak_date'],     longest['peak_date'],     _avg_date([e['peak_date'] for e in episodes]),     _avg_date([e['peak_date'] for e in episodes], med=True)),
+            ('Trough',                 largest['trough_date'],   longest['trough_date'],   _avg_date([e['trough_date'] for e in episodes]),   _avg_date([e['trough_date'] for e in episodes], med=True)),
+            ('Recovery',               largest['recovery_date'], longest['recovery_date'], _avg_date([e['recovery_date'] for e in episodes]), _avg_date([e['recovery_date'] for e in episodes], med=True)),
+            ('Peak to Trough (mo)',    _dur(largest, 'peak_to_trough'),     _dur(longest, 'peak_to_trough'),     f"{np.mean(p2t):.1f}",                f"{np.median(p2t):.1f}"),
+            ('Trough to Recovery (mo)', _dur(largest, 'trough_to_recovery'), _dur(longest, 'trough_to_recovery'), (f"{np.mean(t2r):.1f}" if t2r else '—'), (f"{np.median(t2r):.1f}" if t2r else '—')),
+            ('Peak to Recovery (mo)',  _dur(largest, 'total_months'),       _dur(longest, 'total_months'),       (f"{np.mean(p2r):.1f}" if p2r else '—'), (f"{np.median(p2r):.1f}" if p2r else '—')),
+        ]
+        da_html = ('<div style="max-width:640px;"><table class="mg-tbl"><thead><tr>'
+                   '<th></th><th>Largest</th><th>Longest</th><th>Mean</th><th>Median</th>'
+                   '</tr></thead><tbody>')
+        for lbl, a, b, c, d in da_rows:
+            da_html += f'<tr><td class="lbl">{lbl}</td><td>{a}</td><td>{b}</td><td>{c}</td><td>{d}</td></tr>'
+        da_html += '</tbody></table></div>'
+        st.markdown(da_html, unsafe_allow_html=True)
+
+    st.markdown('<div class="mg-sh" style="margin-top:8px;">Top Drawdown Episodes</div>', unsafe_allow_html=True)
+    ep_html = '<div style="max-width:880px;"><table class="mg-tbl"><thead><tr><th>#</th><th>Drawdown</th><th>Peak</th><th>Trough</th><th>Recovery</th><th>Peak→Trough</th><th>Trough→Rec.</th><th>Total</th></tr></thead><tbody>'
     for i, ep in enumerate(episodes):
         pt  = str(ep['peak_to_trough']) + 'm'
         tr  = str(ep['trough_to_recovery']) + 'm' if ep['trough_to_recovery'] is not None else 'Ongoing'
@@ -848,7 +1097,7 @@ with tabs[2]:
                     f"<td class='lbl'>{ep['peak_date']}</td><td class='lbl'>{ep['trough_date']}</td>"
                     f"<td class='lbl'>{ep['recovery_date']}</td><td class='lbl'>{pt}</td>"
                     f"<td class='lbl'>{tr}</td><td class='lbl'>{tot}</td></tr>")
-    ep_html += '</tbody></table>'
+    ep_html += '</tbody></table></div>'
     st.markdown(ep_html, unsafe_allow_html=True)
 
 
@@ -891,52 +1140,66 @@ with tabs[3]:
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tabs[4]:
-    if bm1_df is None:
-        st.info("Select a benchmark in the controls bar above.")
-    else:
-        reg = piecewise_beta_regression(fund_df, bm1_df)
+    from scipy.stats import t as _t
+
+    def _reg_pval(t_stat, nn):
+        if t_stat is None or np.isnan(t_stat):
+            return np.nan
+        return float(2 * _t.sf(abs(t_stat), df=nn))
+
+    def _render_regression(reg, bm_label):
         if reg is None:
-            st.warning("Insufficient overlapping data for regression.")
-        else:
-            c_rl, c_rr = st.columns([3, 2], gap="large")
-            with c_rl:
-                st.markdown(f'<div class="mg-sh">{fund_name} vs {bm1_name}</div>', unsafe_allow_html=True)
-                st.plotly_chart(chart_regression(reg, fund_name, bm1_name), use_container_width=True)
-            with c_rr:
-                st.markdown('<div class="mg-sh">Regression Statistics</div>', unsafe_allow_html=True)
-                from scipy.stats import t as _t
-                def _pval(t_stat, n):
-                    if t_stat is None or np.isnan(t_stat): return np.nan
-                    return float(2 * _t.sf(abs(t_stat), df=n))
-                n_reg = reg['n']
-                ap = _pval(reg['t_alpha'], n_reg-2)
-                bp = _pval(reg['t_beta'],  n_reg-2)
-                reg_rows = [
-                    ("N (overlapping)",      f"{n_reg}"),
-                    ("Alpha (monthly %)",    f"{reg['alpha']:.4f}%"),
-                    ("  SE(α)",              f"{reg['se_alpha']:.4f}" if not np.isnan(reg['se_alpha']) else '—'),
-                    ("  t(α)",               f"{reg['t_alpha']:.3f}"  if not np.isnan(reg['t_alpha'])  else '—'),
-                    ("  p(α)",               f"{ap:.4f}"              if not np.isnan(ap)              else '—'),
-                    ("  95% CI",             f"[{reg['alpha_ci'][0]:.3f}, {reg['alpha_ci'][1]:.3f}]"  if not np.isnan(reg['alpha_ci'][0]) else '—'),
-                    ("Beta (full period)",   f"{reg['beta']:.4f}"),
-                    ("  SE(β)",              f"{reg['se_beta']:.4f}"  if not np.isnan(reg['se_beta']) else '—'),
-                    ("  t(β)",               f"{reg['t_beta']:.3f}"   if not np.isnan(reg['t_beta'])  else '—'),
-                    ("  p(β)",               f"{bp:.4f}"              if not np.isnan(bp)             else '—'),
-                    ("  95% CI",             f"[{reg['beta_ci'][0]:.3f}, {reg['beta_ci'][1]:.3f}]"   if not np.isnan(reg['beta_ci'][0]) else '—'),
-                    ("R²",                   f"{reg['r2']:.4f}"),
-                    ("Correlation",          f"{reg['corr']:.4f}"),
-                    ("β⁺ (BM up months)",    f"{reg['beta_up']:.4f}"   if reg['beta_up']   is not None else '—'),
-                    ("  N up",               f"{reg['n_up']}"),
-                    ("β⁻ (BM down months)",  f"{reg['beta_dn']:.4f}"   if reg['beta_dn']   is not None else '—'),
-                    ("  N down",             f"{reg['n_dn']}"),
-                    ("Convexity (β⁺ − β⁻)", f"{reg['convexity']:.4f}" if reg['convexity'] is not None else '—'),
-                ]
-                r_html = '<table class="mg-tbl"><thead><tr><th>Statistic</th><th>Value</th></tr></thead><tbody>'
-                for lbl, val in reg_rows:
-                    s = 'color:#BBBBBB;padding-left:20px;' if lbl.startswith('  ') else ''
-                    r_html += f'<tr><td class="lbl" style="{s}">{lbl.strip()}</td><td>{val}</td></tr>'
-                r_html += '</tbody></table>'
-                st.markdown(r_html, unsafe_allow_html=True)
+            st.warning(f"Insufficient overlapping data for regression vs {bm_label}.")
+            return
+        c_rl, c_rr = st.columns([3, 2], gap="large")
+        with c_rl:
+            st.markdown(f'<div class="mg-sh">{fund_name} vs {bm_label}</div>', unsafe_allow_html=True)
+            st.plotly_chart(chart_regression(reg, fund_name, bm_label), use_container_width=True)
+        with c_rr:
+            st.markdown('<div class="mg-sh">Regression Statistics</div>', unsafe_allow_html=True)
+            n_reg = reg['n']
+            ap = _reg_pval(reg['t_alpha'], n_reg - 2)
+            bp = _reg_pval(reg['t_beta'], n_reg - 2)
+            reg_rows = [
+                ("N (overlapping)",      f"{n_reg}"),
+                ("Alpha (monthly %)",    f"{reg['alpha']:.4f}%"),
+                ("  SE(α)",          f"{reg['se_alpha']:.4f}" if not np.isnan(reg['se_alpha']) else '—'),
+                ("  t(α)",           f"{reg['t_alpha']:.2f}"  if not np.isnan(reg['t_alpha'])  else '—'),
+                ("  p(α)",           f"{ap:.4f}"              if not np.isnan(ap)              else '—'),
+                ("  95% CI",             f"[{reg['alpha_ci'][0]:.2f}, {reg['alpha_ci'][1]:.2f}]"  if not np.isnan(reg['alpha_ci'][0]) else '—'),
+                ("Beta (full period)",   f"{reg['beta']:.4f}"),
+                ("  SE(β)",          f"{reg['se_beta']:.4f}"  if not np.isnan(reg['se_beta']) else '—'),
+                ("  t(β)",           f"{reg['t_beta']:.2f}"   if not np.isnan(reg['t_beta'])  else '—'),
+                ("  p(β)",           f"{bp:.4f}"              if not np.isnan(bp)             else '—'),
+                ("  95% CI",             f"[{reg['beta_ci'][0]:.2f}, {reg['beta_ci'][1]:.2f}]"   if not np.isnan(reg['beta_ci'][0]) else '—'),
+                ("R²",               f"{reg['r2']:.4f}"),
+                ("Correlation",          f"{reg['corr']:.4f}"),
+                ("β⁺ (BM up months)",    f"{reg['beta_up']:.4f}"   if reg['beta_up']   is not None else '—'),
+                ("  N up",               f"{reg['n_up']}"),
+                ("β⁻ (BM down months)",  f"{reg['beta_dn']:.4f}"   if reg['beta_dn']   is not None else '—'),
+                ("  N down",             f"{reg['n_dn']}"),
+                ("Convexity (β⁺ − β⁻)", f"{reg['convexity']:.4f}" if reg['convexity'] is not None else '—'),
+            ]
+            r_html = '<table class="mg-tbl"><thead><tr><th>Statistic</th><th>Value</th></tr></thead><tbody>'
+            for lbl, val in reg_rows:
+                s = 'color:#1A1A1A;padding-left:20px;' if lbl.startswith('  ') else ''
+                r_html += f'<tr><td class="lbl" style="{s}">{lbl.strip()}</td><td>{val}</td></tr>'
+            r_html += '</tbody></table>'
+            st.markdown(r_html, unsafe_allow_html=True)
+
+    _render_regression(piecewise_beta_regression(fund_df, MSCI_DF), 'MSCI World Hdg')
+    st.markdown('<div style="height:12px;"></div>', unsafe_allow_html=True)
+    _render_regression(piecewise_beta_regression(fund_df, AGG_DF), 'Bloomberg Agg')
+
+    st.markdown('<div class="mg-sh" style="margin-top:14px;">Co-Movement in Market Extremes</div>', unsafe_allow_html=True)
+    st.markdown('<div class="mg-note">The market\'s most extreme months with the strategy\'s concurrent return — a tail-correlation view. (No hedge-fund index in the dataset; Bloomberg Agg shown as the third series.)</div>', unsafe_allow_html=True)
+    c_bw_l, c_bw_r = st.columns(2, gap="large")
+    with c_bw_l:
+        st.markdown('<div class="mg-sh">Market\'s Worst 10 Months</div>', unsafe_allow_html=True)
+        st.plotly_chart(chart_best_worst(fund_df, MSCI_DF, 'MSCI World Hdg', AGG_DF, 'Bloomberg Agg', 10, worst=True), use_container_width=True)
+    with c_bw_r:
+        st.markdown('<div class="mg-sh">Market\'s Best 10 Months</div>', unsafe_allow_html=True)
+        st.plotly_chart(chart_best_worst(fund_df, MSCI_DF, 'MSCI World Hdg', AGG_DF, 'Bloomberg Agg', 10, worst=False), use_container_width=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1009,9 +1272,9 @@ with tabs[7]:
     m_defs = [
         ('Ann. Return (%)',     'ann_ret',  True,  2, False),
         ('Ann. Volatility (%)', 'ann_vol',  False, 2, False),
-        ('Sharpe (Rf=TB3MS)',   'sharpe',   False, 3, False),
-        ('Sortino (Rf=TB3MS)',  'sortino',  False, 3, False),
-        ('Calmar Ratio',        'calmar',   False, 3, False),
+        ('Sharpe (Rf=TB3MS)',   'sharpe',   False, 2, False),
+        ('Sortino (Rf=TB3MS)',  'sortino',  False, 2, False),
+        ('Calmar Ratio',        'calmar',   False, 2, False),
         ('Max Drawdown (%)',    'max_dd',   True,  2, True),
         ('Hit Rate (%)',        'hit_rate', False, 1, False),
         ('Best Month (%)',      'best',     True,  2, False),
