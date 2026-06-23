@@ -545,7 +545,8 @@ def chart_best_worst(fund_df: pd.DataFrame,
                      alt_df: pd.DataFrame, alt_name: str,
                      n: int = 10, worst: bool = True,
                      bm3_df: pd.DataFrame | None = None,
-                     bm3_name: str = '', show_legend: bool = True) -> go.Figure:
+                     bm3_name: str = '', show_legend: bool = True,
+                     fund_name: str = 'Fund') -> go.Figure:
     """The market's worst/best N months with the strategy's and an alternative
     index's concurrent returns — a tail co-movement (correlation) view."""
     m = fund_df[['year', 'month', 'ret']].rename(columns={'ret': 'fund'})
@@ -570,7 +571,7 @@ def chart_best_worst(fund_df: pd.DataFrame,
     series.append((alt_name, m['alt'].values, '#5B9BD5', 0.56))
     if has_bm3:
         series.append((bm3_name, m['bm3'].values, '#43B581', 0.40))
-    series.append(('Strategy', m['fund'].values, '#006B7A', 0.22))  # front, thinnest
+    series.append((fund_name, m['fund'].values, '#006B7A', 0.22))  # front, thinnest
     for name, vals, color, width in series:
         fig.add_trace(go.Bar(
             y=labels, x=vals, orientation='h', name=name, width=width,
@@ -603,9 +604,9 @@ def chart_up_down_capture(fund_df: pd.DataFrame, fund_name: str,
     m = fund_df[['year', 'month', 'ret']].rename(columns={'ret': '__fund'})
     m = m.merge(mkt_df[['year', 'month', 'ret']].rename(columns={'ret': '__mkt'}),
                 on=['year', 'month'], how='inner')
-    series = [(fund_name, '__fund', C['accent']),
-              (mkt_name,  '__mkt',  C['gold'])]
-    palette = ['#7FD4FF', C['green'], C['muted'], C['red']]
+    series = [(fund_name, '__fund', '#006B7A'),
+              (mkt_name,  '__mkt',  '#E8B23A')]
+    palette = ['#5B9BD5', '#43B581', C['muted'], C['red']]
     for i, (nm, df) in enumerate(others):
         key = f'__o{i}'
         m = m.merge(df[['year', 'month', 'ret']].rename(columns={'ret': key}),
@@ -624,23 +625,24 @@ def chart_up_down_capture(fund_df: pd.DataFrame, fund_name: str,
         dn_avg = float(m.loc[dn, key].mean()) if dn.any() else 0.0
         fig.add_trace(go.Bar(
             x=cats, y=[up_avg, dn_avg], name=nm,
-            marker_color=color, marker_line_color=C['surface'], marker_line_width=0.6,
+            marker_color=color, marker_line_width=0,
             hovertemplate='%{y:.2f}%<extra>' + nm + '</extra>'))
 
     _apply_base(fig,
-        xaxis=dict(tickfont=dict(family=FONT_UI, size=14, color=C['axis']),
-                   linecolor=C['border'], zeroline=False),
-        yaxis=dict(title='Avg Monthly Return (%)', ticksuffix='%', gridcolor=C['grid'],
-                   zeroline=True, zerolinecolor=C['border'], zerolinewidth=1.5,
-                   tickfont=dict(family=FONT_MONO, size=13, color=C['axis']),
-                   title_font=dict(family=FONT_UI, size=14, color=C['axis'])),
+        plot_bgcolor='#FFFFFF',
+        xaxis=dict(tickfont=dict(family=FONT_UI, size=14, color='#1A1A1A'),
+                   linecolor='#1A1A1A', zeroline=False),
+        yaxis=dict(title='Avg Monthly Return (%)', ticksuffix='%', gridcolor='#E5ECEC',
+                   zeroline=True, zerolinecolor='#1A1A1A', zerolinewidth=1.5,
+                   tickfont=dict(family=FONT_MONO, size=13, color='#1A1A1A'),
+                   title_font=dict(family=FONT_UI, size=14, color='#1A1A1A')),
         height=440, hovermode='closest')
-    # legend inside the plot at bottom-left, transparent (no box), white text
+    # legend inside the plot at bottom-left, transparent (no box), dark text on white
     fig.update_layout(showlegend=True, barmode='group', bargap=0.32, bargroupgap=0.08,
                       legend=dict(orientation='v', yanchor='bottom', y=0.02,
                                   xanchor='left', x=0.02,
                                   bgcolor='rgba(0,0,0,0)', borderwidth=0,
-                                  font=dict(family=FONT_UI, size=12, color=C['text'])))
+                                  font=dict(family=FONT_UI, size=12, color='#1A1A1A')))
     return fig
 
 
