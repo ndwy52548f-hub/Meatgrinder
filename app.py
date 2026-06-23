@@ -22,7 +22,7 @@ from charts import (
     chart_cumulative, chart_drawdowns, chart_monthly_bars,
     chart_histogram, chart_qq, chart_acf, chart_calendar_heatmap,
     chart_rolling, chart_regression, chart_seasonality_monthly,
-    chart_seasonality_quarterly, chart_best_worst, chart_up_down_capture, chart_waterfall, MN,
+    chart_seasonality_quarterly, chart_best_worst, chart_up_down_capture, chart_waterfall, chart_shocks, MN,
 )
 
 # ─── PAGE CONFIG ──────────────────────────────────────────────────────────────
@@ -835,7 +835,7 @@ st.markdown(f"""
 tabs = st.tabs([
     "Summary", "Calendar", "Drawdowns", "Distribution",
     "Regression", "Co-Movement", "Waterfall", "Rolling", "Seasonality", "Multi-Period",
-    "Macro Events", "Data", "Input",
+    "Macro Events", "Shocks", "Data", "Input",
 ])
 
 
@@ -843,7 +843,7 @@ tabs = st.tabs([
 # TAB 10 — INPUT
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[12]:
+with tabs[13]:
     st.markdown('<div class="mg-sh">Input &amp; Parsing Diagnostics</div>', unsafe_allow_html=True)
     st.markdown(f"""
 <div class="mg-id">
@@ -1264,10 +1264,10 @@ with tabs[5]:
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tabs[6]:
-    st.markdown(f'<div class="mg-sh" style="margin-top:14px;">{fund_name} vs Market Waterfall</div>', unsafe_allow_html=True)
+    st.markdown('<div class="mg-sh" style="margin-top:14px;">Strategy vs Market Waterfall</div>', unsafe_allow_html=True)
     st.markdown('<div class="mg-note">Every overlapping month sorted by market return, best (left) to worst (right). Bottom: MSCI World Hedged, shaded by its own return. Top: the fund over the same ordering — blue when positive, orange/red when negative. Hover any bar for the month.</div>', unsafe_allow_html=True)
     st.plotly_chart(
-        chart_waterfall(fund_df, fund_name, MSCI_DF, 'MSCI World Hdg'),
+        chart_waterfall(fund_df, 'Strategy', MSCI_DF, 'MSCI World Hdg'),
         use_container_width=True, config={'displayModeBar': False})
 
 
@@ -1401,10 +1401,23 @@ with tabs[10]:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 9 — DATA
+# TAB 11 — SHOCKS
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tabs[11]:
+    st.markdown('<div class="mg-sh" style="margin-top:14px;">Performance During Discrete Shock Events</div>', unsafe_allow_html=True)
+    st.markdown('<div class="mg-note">The four events with the largest Strategy-vs-market return differential. Each panel shows the compound return of every series over that window — blue when positive, orange/red when negative.</div>', unsafe_allow_html=True)
+    st.plotly_chart(
+        chart_shocks(fund_df, 'Strategy', MSCI_DF, 'MSCI World Hdg',
+                     AGG_DF, 'Bloomberg Agg', bm3_df=bm3_df, bm3_name=bm3_name),
+        use_container_width=True, config={'displayModeBar': False})
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 12 — DATA
+# ══════════════════════════════════════════════════════════════════════════════
+
+with tabs[12]:
     _, c_s = st.columns([3, 1])
     with c_s:
         search = st.text_input("Filter rows", placeholder="e.g. 2020 or Mar")

@@ -11,7 +11,7 @@ from plotly.subplots import make_subplots
 from analytics import (
     geo_return, ann_vol, drawdown_series, acf, acf_conf_band,
     qq_data, skewness, excess_kurtosis, rolling_metrics,
-    MSCI_DF, AGG_DF
+    MSCI_DF, AGG_DF, MACRO_EVENTS, compound_return
 )
 
 # ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
@@ -711,4 +711,64 @@ def chart_waterfall(fund_df: pd.DataFrame, fund_name: str,
         yaxis_title_font=dict(family=FONT_UI, size=14, color='#1A1A1A'),
         yaxis2_title_font=dict(family=FONT_UI, size=14, color='#1A1A1A'),
     )
+    return fig
+
+
+def chart_shocks(fund_df: pd.DataFrame, fund_name: str,
+                 mkt_df: pd.DataFrame, mkt_name: str,
+                 alt_df: pd.DataFrame, alt_name: str,
+                 bm3_df: pd.DataFrame | None = None, bm3_name: str = '') -> go.Figure:
+    """Performance during discrete shock events. From the macro-event list, pick
+    the 4 events with the largest |fund - market| return differential, and for
+    each show the compound return of every series as horizontal bars, coloured by
+    the waterfall palette (blue positive, orange/red negative)."""
+    # rows of compound returns per event that the fund actually covers
+    evs = []
+    for ev in MACRO_EVENTS:
+        months = ev['months']
+        if not any(len(fund_df[(fund_df['year'] == y) & (fund_df['month'] == m)]) > 0
+                   for (y, m) in months):
+            continue
+        f = compound_return(fund_df, months)
+        k = compound_return(mkt_df, months)
+        if f is None or k is None:
+            continue
+        series = [(fund_name, f), (mkt_name, k),
+                  (alt_name, compound_return(alt_df, months))]
+        if bm3_df is not None:
+            series.append((bm3_name, compound_return(bm3_df, months)))
+        evs.append({'name': ev['name'], 'period': ev['period'],
+                    'diff': abs(f - k), 'series': series})
+    if not evs:
+        return go.Figure()
+    evs.sort(key=lambda e: e['diff'], reverse=True)
+    evs = evs[:4]
+
+    titles = [f"{e['name']}  ·  {e['period']}" for e in evs]
+    rows = (len(evs) + 1) // 2
+    fig = make_subplots(rows=rows, cols=2, subplot_titles=titles,
+                        horizontal_spacing=0.18, vertical_spacing=0.18)
+    for i, e in enumerate(evs):
+        r, c = i // 2 + 1, i % 2 + 1
+        names = [nm for nm, v in e['series'] if v is not None]
+        vals  = [v  for nm, v in e['series'] if v is not None]
+        scale = max((abs(v) for v in vals), default=1.0) or 1.0
+        colors = [_wf_color(v, scale) for v in vals]
+        fig.add_trace(go.Bar(
+            y=names[::-1], x=vals[::-1], orientation='h',
+            marker_color=colors[::-1], marker_line_width=0,
+            text=[f"{v:+.1f}%" for v in vals[::-1]], textposition='outside',
+            textfont=dict(family=FONT_MONO, size=12, color='#1A1A1A'),
+            hovertemplate='%{y}: %{x:.2f}%<extra></extra>'), row=r, col=c)
+        fig.update_xaxes(showticklabels=False, showgrid=False, zeroline=True,
+                         zerolinecolor='#1A1A1A', zerolinewidth=1.2, row=r, col=c)
+        fig.update_yaxes(tickfont=dict(family=FONT_UI, size=12, color='#1A1A1A'),
+                         showgrid=False, row=r, col=c)
+    fig.update_layout(
+        showlegend=False, bargap=0.35,
+        paper_bgcolor='#FFFFFF', plot_bgcolor='#FFFFFF',
+        font=dict(family=FONT_UI, color='#1A1A1A'),
+        margin=dict(l=10, r=30, t=40, b=10), height=200 * rows + 60)
+    for ann in fig.layout.annotations:   # subplot titles
+        ann.font = dict(family=FONT_UI, size=13, color='#006B7A')
     return fig
