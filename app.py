@@ -101,17 +101,6 @@ section[data-testid="stFileUploaderDropzone"] {
   min-width: 0 !important;
   width: fit-content !important;
 }
-/* Relabel the uploader button text to be descriptive */
-section[data-testid="stFileUploaderDropzone"] button {
-  font-size: 0 !important;
-}
-section[data-testid="stFileUploaderDropzone"] button::after {
-  content: "Upload Fund Data";
-  font-size: 13px !important;
-  font-family: 'Inter', sans-serif !important;
-  font-weight: 600 !important;
-  letter-spacing: 0.3px;
-}
 
 /* Buttons — solid teal, thick border, sized to content */
 [data-testid="stButton"] button {
@@ -705,12 +694,10 @@ if _hfrx_cur not in _hfrx_names:
     _hfrx_cur = _hfrx_names[0]
 
 _ALIGN = '<div style="height:24px;"></div>'   # drops buttons to the input baseline
-c_up, c_fund, c_hfrx, c_tog, _pad = st.columns([0.55, 1.5, 1.6, 1.4, 0.95])
+c_up, c_fund, c_hfrx, c_tog, _pad = st.columns([0.95, 1.5, 1.55, 1.35, 0.65])
 
 with c_up:
-    st.markdown(_ALIGN, unsafe_allow_html=True)
-    new_up = st.file_uploader("Load New File", type=['csv','xlsx','xls','pdf'],
-                              label_visibility="collapsed")
+    new_up = st.file_uploader("Upload Fund Data", type=['csv','xlsx','xls','pdf'])
     if new_up is not None:
         if new_up.name.lower().endswith('.pdf'):
             _load_pdf_file(new_up)
