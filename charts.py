@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
+from plotly.subplots import make_subplots
 from analytics import (
     geo_return, ann_vol, drawdown_series, acf, acf_conf_band,
     qq_data, skewness, excess_kurtosis, rolling_metrics,
@@ -634,8 +635,78 @@ def chart_up_down_capture(fund_df: pd.DataFrame, fund_name: str,
                    tickfont=dict(family=FONT_MONO, size=13, color=C['axis']),
                    title_font=dict(family=FONT_UI, size=14, color=C['axis'])),
         height=440, hovermode='closest')
-    # set legend AFTER base so it isn't overridden by LAYOUT_BASE's showlegend=False
+    # legend inside the plot at bottom-left, transparent (no box), white text
     fig.update_layout(showlegend=True, barmode='group', bargap=0.32, bargroupgap=0.08,
-                      legend=dict(orientation='h', yanchor='bottom', y=1.01, x=0,
-                                  font=dict(family=FONT_UI, size=13, color=C['axis'])))
+                      legend=dict(orientation='v', yanchor='bottom', y=0.02,
+                                  xanchor='left', x=0.02,
+                                  bgcolor='rgba(0,0,0,0)', borderwidth=0,
+                                  font=dict(family=FONT_UI, size=12, color=C['text'])))
+    return fig
+
+
+def _wf_hex(a, b, t):
+    """Linear interpolate between hex colors a and b at t in [0,1]."""
+    t = max(0.0, min(1.0, t))
+    a = a.lstrip('#'); b = b.lstrip('#')
+    ar, ag, ab = int(a[0:2],16), int(a[2:4],16), int(a[4:6],16)
+    br, bg, bb = int(b[0:2],16), int(b[2:4],16), int(b[4:6],16)
+    return '#%02X%02X%02X' % (round(ar+(br-ar)*t), round(ag+(bg-ag)*t), round(ab+(bb-ab)*t))
+
+
+def _wf_color(v, scale):
+    """Diverging color driven by value v, normalised by scale (max abs).
+    Positive -> light blue to dark blue; negative -> light orange to dark red."""
+    if scale <= 0 or v == 0:
+        return '#C9D1D6'
+    t = min(abs(v) / scale, 1.0)
+    if v > 0:
+        return _wf_hex('#CFE0F0', '#2C5F8A', t)   # light -> dark blue
+    return _wf_hex('#F6C89A', '#A93420', t)        # light orange -> dark red
+
+
+def chart_waterfall(fund_df: pd.DataFrame, fund_name: str,
+                    mkt_df: pd.DataFrame, mkt_name: str) -> go.Figure:
+    """Two stacked panels sharing one x-axis. Months are sorted by the MARKET
+    return, best -> worst (left -> right). Bottom panel = market (color graded
+    by its own return); top panel = fund, aligned to the same order (blue if
+    positive, orange/red if negative). White background."""
+    m = fund_df[['year', 'month', 'ret']].rename(columns={'ret': 'fund'})
+    m = m.merge(mkt_df[['year', 'month', 'ret']].rename(columns={'ret': 'mkt'}),
+                on=['year', 'month'], how='inner')
+    m = m.sort_values('mkt', ascending=False).reset_index(drop=True)
+    x = list(range(len(m)))
+    labels = [f"{MN[int(mo)-1]} '{str(int(yr))[2:]}" for yr, mo in zip(m['year'], m['month'])]
+
+    f_scale = float(m['fund'].abs().max() or 1.0)
+    k_scale = float(m['mkt'].abs().max() or 1.0)
+    f_colors = [_wf_color(v, f_scale) for v in m['fund']]
+    k_colors = [_wf_color(v, k_scale) for v in m['mkt']]
+
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.06,
+                        row_heights=[0.5, 0.5])
+    fig.add_trace(go.Bar(x=x, y=m['fund'], marker_color=f_colors, marker_line_width=0,
+                         customdata=labels,
+                         hovertemplate='%{customdata}<br>' + fund_name + ': %{y:.2f}%<extra></extra>'),
+                  row=1, col=1)
+    fig.add_trace(go.Bar(x=x, y=m['mkt'], marker_color=k_colors, marker_line_width=0,
+                         customdata=labels,
+                         hovertemplate='%{customdata}<br>' + mkt_name + ': %{y:.2f}%<extra></extra>'),
+                  row=2, col=1)
+
+    axis_kw = dict(showgrid=True, gridcolor='#E5ECEC', zeroline=True,
+                   zerolinecolor='#1A1A1A', zerolinewidth=1.2, ticksuffix='%',
+                   tickfont=dict(family=FONT_MONO, size=12, color='#1A1A1A'))
+    fig.update_yaxes(title_text=fund_name, row=1, col=1, **axis_kw)
+    fig.update_yaxes(title_text=mkt_name,  row=2, col=1, **axis_kw)
+    # x is a sorted index, not chronological — hide the dense tick labels; hover carries the month
+    fig.update_xaxes(showticklabels=False, showgrid=False, zeroline=False, row=1, col=1)
+    fig.update_xaxes(showticklabels=False, showgrid=False, zeroline=False, row=2, col=1)
+    fig.update_layout(
+        showlegend=False, bargap=0.25,
+        paper_bgcolor='#FFFFFF', plot_bgcolor='#FFFFFF',
+        font=dict(family=FONT_UI, color='#1A1A1A'),
+        margin=dict(l=70, r=24, t=16, b=16), height=560,
+        yaxis_title_font=dict(family=FONT_UI, size=14, color='#1A1A1A'),
+        yaxis2_title_font=dict(family=FONT_UI, size=14, color='#1A1A1A'),
+    )
     return fig

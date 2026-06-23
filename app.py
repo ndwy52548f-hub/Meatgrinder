@@ -22,7 +22,7 @@ from charts import (
     chart_cumulative, chart_drawdowns, chart_monthly_bars,
     chart_histogram, chart_qq, chart_acf, chart_calendar_heatmap,
     chart_rolling, chart_regression, chart_seasonality_monthly,
-    chart_seasonality_quarterly, chart_best_worst, chart_up_down_capture, MN,
+    chart_seasonality_quarterly, chart_best_worst, chart_up_down_capture, chart_waterfall, MN,
 )
 
 # ─── PAGE CONFIG ──────────────────────────────────────────────────────────────
@@ -834,7 +834,7 @@ st.markdown(f"""
 
 tabs = st.tabs([
     "Summary", "Calendar", "Drawdowns", "Distribution",
-    "Regression", "Rolling", "Seasonality", "Multi-Period",
+    "Regression", "Co-Movement", "Waterfall", "Rolling", "Seasonality", "Multi-Period",
     "Macro Events", "Data", "Input",
 ])
 
@@ -843,7 +843,7 @@ tabs = st.tabs([
 # TAB 10 — INPUT
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[10]:
+with tabs[12]:
     st.markdown('<div class="mg-sh">Input &amp; Parsing Diagnostics</div>', unsafe_allow_html=True)
     st.markdown(f"""
 <div class="mg-id">
@@ -1236,6 +1236,12 @@ with tabs[4]:
     st.markdown('<div style="height:12px;"></div>', unsafe_allow_html=True)
     _render_regression(piecewise_beta_regression(fund_df, bm3_df), bm3_name)
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 5 — CO-MOVEMENT
+# ══════════════════════════════════════════════════════════════════════════════
+
+with tabs[5]:
     st.markdown('<div class="mg-sh" style="margin-top:14px;">Co-Movement in Market Extremes</div>', unsafe_allow_html=True)
     c_bw_l, c_bw_r = st.columns(2, gap="large")
     with c_bw_l:
@@ -1254,10 +1260,22 @@ with tabs[4]:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 5 — ROLLING
+# TAB 6 — WATERFALL
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[5]:
+with tabs[6]:
+    st.markdown(f'<div class="mg-sh" style="margin-top:14px;">{fund_name} vs Market Waterfall</div>', unsafe_allow_html=True)
+    st.markdown('<div class="mg-note">Every overlapping month sorted by market return, best (left) to worst (right). Bottom: MSCI World Hedged, shaded by its own return. Top: the fund over the same ordering — blue when positive, orange/red when negative. Hover any bar for the month.</div>', unsafe_allow_html=True)
+    st.plotly_chart(
+        chart_waterfall(fund_df, fund_name, MSCI_DF, 'MSCI World Hdg'),
+        use_container_width=True, config={'displayModeBar': False})
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 7 — ROLLING
+# ══════════════════════════════════════════════════════════════════════════════
+
+with tabs[7]:
     if len(fund_df) < 12:
         st.warning("Need at least 12 months of data for rolling metrics.")
     else:
@@ -1276,7 +1294,7 @@ with tabs[5]:
 # TAB 6 — SEASONALITY
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[6]:
+with tabs[8]:
     seas = seasonality(fund_df)
     c_sm, c_sq = st.columns(2, gap="large")
     with c_sm:
@@ -1302,7 +1320,7 @@ with tabs[6]:
 # TAB 7 — MULTI-PERIOD
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[7]:
+with tabs[9]:
     last_year  = int(fund_df.iloc[-1]['year'])
     last_month = int(fund_df.iloc[-1]['month'])
 
@@ -1361,7 +1379,7 @@ with tabs[7]:
 # TAB 8 — MACRO EVENTS
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[8]:
+with tabs[10]:
     ev_rows = macro_events_table(fund_df, bm1_df)
     if not ev_rows:
         st.info("No macro event periods overlap with this fund's history.")
@@ -1386,7 +1404,7 @@ with tabs[8]:
 # TAB 9 — DATA
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[9]:
+with tabs[11]:
     _, c_s = st.columns([3, 1])
     with c_s:
         search = st.text_input("Filter rows", placeholder="e.g. 2020 or Mar")
