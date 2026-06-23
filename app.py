@@ -575,7 +575,7 @@ def _render_pdf_picker():
 
     cprev, cmeta = st.columns([2, 3])
     with cprev:
-        st.dataframe(prev, height=260, hide_index=True, use_container_width=True)
+        st.dataframe(prev, height=260, hide_index=True, use_container_width=True, config={'displayModeBar': False})
     with cmeta:
         _default_name = sel['label']
         if _default_name == 'Returns':
@@ -1069,7 +1069,7 @@ with tabs[1]:
                 f'<thead><tr>{th}</tr></thead><tbody>{rows_html}</tbody></table></div>')
     st.markdown(cal_html, unsafe_allow_html=True)
     st.markdown('<div class="mg-sh" style="margin-top:8px;">Monthly Return Bars</div>', unsafe_allow_html=True)
-    st.plotly_chart(chart_monthly_bars(fund_df), use_container_width=True)
+    st.plotly_chart(chart_monthly_bars(fund_df), use_container_width=True, config={'displayModeBar': False})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1078,7 +1078,7 @@ with tabs[1]:
 
 with tabs[2]:
     st.markdown('<div class="mg-sh">Drawdown Series</div>', unsafe_allow_html=True)
-    st.plotly_chart(chart_drawdowns(fund_df), use_container_width=True)
+    st.plotly_chart(chart_drawdowns(fund_df), use_container_width=True, config={'displayModeBar': False})
 
     episodes = top_drawdowns(fund_df)
 
@@ -1152,10 +1152,10 @@ with tabs[3]:
     c_h, c_q = st.columns([3, 2], gap="large")
     with c_h:
         st.markdown('<div class="mg-sh">Return Distribution</div>', unsafe_allow_html=True)
-        st.plotly_chart(chart_histogram(fund_df, outliers_df if not trimmed else None), use_container_width=True)
+        st.plotly_chart(chart_histogram(fund_df, outliers_df if not trimmed else None), use_container_width=True, config={'displayModeBar': False})
     with c_q:
         st.markdown('<div class="mg-sh">Q-Q Plot vs Normal</div>', unsafe_allow_html=True)
-        st.plotly_chart(chart_qq(fund_df), use_container_width=True)
+        st.plotly_chart(chart_qq(fund_df), use_container_width=True, config={'displayModeBar': False})
 
     st.markdown('<div class="mg-sh" style="margin-top:8px;">Normality Tests</div>', unsafe_allow_html=True)
     norm = normality_tests(rets)
@@ -1173,7 +1173,7 @@ with tabs[3]:
     st.markdown(n_html, unsafe_allow_html=True)
 
     st.markdown('<div class="mg-sh" style="margin-top:28px;">Return Autocorrelation — Lags 1–12</div>', unsafe_allow_html=True)
-    st.plotly_chart(chart_acf(fund_df), use_container_width=True)
+    st.plotly_chart(chart_acf(fund_df), use_container_width=True, config={'displayModeBar': False})
     cb = acf_conf_band(len(rets))
     st.markdown(f'<div class="mg-note">95% confidence band: ±{cb:.4f} &nbsp;·&nbsp; Highlighted bars are statistically significant</div>', unsafe_allow_html=True)
 
@@ -1197,7 +1197,7 @@ with tabs[4]:
         c_rl, c_rr = st.columns([3, 2], gap="large")
         with c_rl:
             st.markdown(f'<div class="mg-sh">{fund_name} vs {bm_label}</div>', unsafe_allow_html=True)
-            st.plotly_chart(chart_regression(reg, fund_name, bm_label), use_container_width=True)
+            st.plotly_chart(chart_regression(reg, fund_name, bm_label), use_container_width=True, config={'displayModeBar': False})
         with c_rr:
             st.markdown('<div class="mg-sh">Regression Statistics</div>', unsafe_allow_html=True)
             n_reg = reg['n']
@@ -1240,17 +1240,17 @@ with tabs[4]:
     c_bw_l, c_bw_r = st.columns(2, gap="large")
     with c_bw_l:
         st.markdown('<div class="mg-sh">Market\'s Worst 5 Months</div>', unsafe_allow_html=True)
-        st.plotly_chart(chart_best_worst(fund_df, MSCI_DF, 'MSCI World Hdg', AGG_DF, 'Bloomberg Agg', 5, worst=True, bm3_df=bm3_df, bm3_name=bm3_name, show_legend=True), use_container_width=True)
+        st.plotly_chart(chart_best_worst(fund_df, MSCI_DF, 'MSCI World Hdg', AGG_DF, 'Bloomberg Agg', 5, worst=True, bm3_df=bm3_df, bm3_name=bm3_name, show_legend=True), use_container_width=True, config={'displayModeBar': False})
     with c_bw_r:
         st.markdown('<div class="mg-sh">Market\'s Best 5 Months</div>', unsafe_allow_html=True)
-        st.plotly_chart(chart_best_worst(fund_df, MSCI_DF, 'MSCI World Hdg', AGG_DF, 'Bloomberg Agg', 5, worst=False, bm3_df=bm3_df, bm3_name=bm3_name, show_legend=False), use_container_width=True)
+        st.plotly_chart(chart_best_worst(fund_df, MSCI_DF, 'MSCI World Hdg', AGG_DF, 'Bloomberg Agg', 5, worst=False, bm3_df=bm3_df, bm3_name=bm3_name, show_legend=False), use_container_width=True, config={'displayModeBar': False})
 
     st.markdown('<div class="mg-sh" style="margin-top:14px;">Up / Down Capture</div>', unsafe_allow_html=True)
     st.markdown('<div class="mg-note">Average monthly return in up-market vs. down-market months. Up and down months are defined by the market (MSCI World Hedged) being positive or negative.</div>', unsafe_allow_html=True)
     st.plotly_chart(
         chart_up_down_capture(fund_df, fund_name, MSCI_DF, 'MSCI World Hdg',
                               others=[('Bloomberg Agg', AGG_DF), (bm3_name, bm3_df)]),
-        use_container_width=True)
+        use_container_width=True, config={'displayModeBar': False})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1262,14 +1262,14 @@ with tabs[5]:
         st.warning("Need at least 12 months of data for rolling metrics.")
     else:
         st.markdown('<div class="mg-sh">Rolling 12-Month Return</div>', unsafe_allow_html=True)
-        st.plotly_chart(chart_rolling(fund_df, 'roll_ret'), use_container_width=True)
+        st.plotly_chart(chart_rolling(fund_df, 'roll_ret'), use_container_width=True, config={'displayModeBar': False})
         c_rs, c_rv = st.columns(2, gap="large")
         with c_rs:
             st.markdown('<div class="mg-sh">Rolling 12-Month Sharpe</div>', unsafe_allow_html=True)
-            st.plotly_chart(chart_rolling(fund_df, 'roll_sharpe'), use_container_width=True)
+            st.plotly_chart(chart_rolling(fund_df, 'roll_sharpe'), use_container_width=True, config={'displayModeBar': False})
         with c_rv:
             st.markdown('<div class="mg-sh">Rolling 12-Month Volatility</div>', unsafe_allow_html=True)
-            st.plotly_chart(chart_rolling(fund_df, 'roll_vol'), use_container_width=True)
+            st.plotly_chart(chart_rolling(fund_df, 'roll_vol'), use_container_width=True, config={'displayModeBar': False})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1281,10 +1281,10 @@ with tabs[6]:
     c_sm, c_sq = st.columns(2, gap="large")
     with c_sm:
         st.markdown('<div class="mg-sh">Average Return by Month</div>', unsafe_allow_html=True)
-        st.plotly_chart(chart_seasonality_monthly(seas), use_container_width=True)
+        st.plotly_chart(chart_seasonality_monthly(seas), use_container_width=True, config={'displayModeBar': False})
     with c_sq:
         st.markdown('<div class="mg-sh">Average Return by Quarter</div>', unsafe_allow_html=True)
-        st.plotly_chart(chart_seasonality_quarterly(seas), use_container_width=True)
+        st.plotly_chart(chart_seasonality_quarterly(seas), use_container_width=True, config={'displayModeBar': False})
 
     st.markdown('<div class="mg-sh" style="margin-top:8px;">Monthly Seasonality Detail</div>', unsafe_allow_html=True)
     s_html = '<table class="mg-tbl"><thead><tr><th>Month</th><th>Avg Return</th><th>Std Dev</th><th>N</th><th>Hit Rate</th></tr></thead><tbody>'
