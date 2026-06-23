@@ -81,10 +81,14 @@ st.markdown("""
   padding: 10px 40px 0;
 }
 
-/* Outlier toggle — teal active state to match the buttons */
+/* Outlier toggle — teal active state to match the buttons; tinted off-state */
 [data-baseweb="checkbox"] [aria-checked="true"] {
   background-color: #006B7A !important;
   border-color: #006B7A !important;
+}
+[data-baseweb="checkbox"] [aria-checked="false"] {
+  background-color: #BCD7DB !important;
+  border-color: #A6C7CC !important;
 }
 
 /* Compact the file uploader: hide the limit caption, shrink to the button */
@@ -98,7 +102,7 @@ section[data-testid="stFileUploaderDropzone"] {
   width: fit-content !important;
 }
 
-/* Clear Data button — solid teal, thick border, sized to content */
+/* Buttons — solid teal, thick border, sized to content */
 [data-testid="stButton"] button {
   background: #006B7A !important;
   color: #FFFFFF !important;
@@ -684,10 +688,18 @@ if st.session_state['fund_df'] is None:
 
 st.markdown('<div class="mg-input-hdr">Input</div>', unsafe_allow_html=True)
 
-c1, c5, c2, c4, _pad = st.columns([0.5, 0.5, 1.5, 1.3, 3.5])
+_hfrx_names = list(HFRX_INDICES.keys())
+_hfrx_cur = st.session_state.get('hfrx_choice', _hfrx_names[0])
+if _hfrx_cur not in _hfrx_names:
+    _hfrx_cur = _hfrx_names[0]
 
-with c1:
-    new_up = st.file_uploader("Load New File", type=['csv','xlsx','xls','pdf'])
+_ALIGN = '<div style="height:24px;"></div>'   # drops buttons to the input baseline
+c_up, c_fund, c_hfrx, c_tog, _pad = st.columns([0.55, 1.5, 1.6, 1.4, 0.95])
+
+with c_up:
+    st.markdown(_ALIGN, unsafe_allow_html=True)
+    new_up = st.file_uploader("Load New File", type=['csv','xlsx','xls','pdf'],
+                              label_visibility="collapsed")
     if new_up is not None:
         if new_up.name.lower().endswith('.pdf'):
             _load_pdf_file(new_up)
@@ -704,36 +716,24 @@ with c1:
                 })
                 st.rerun()
 
-with c2:
+with c_fund:
     fn = st.text_input("Fund Name", value=st.session_state['fund_name'])
     st.session_state['fund_name'] = fn
 
-with c4:
-    st.markdown('<div style="height:26px;"></div>', unsafe_allow_html=True)
+with c_hfrx:
+    st.session_state['hfrx_choice'] = st.selectbox(
+        "Hedge Fund Index", _hfrx_names,
+        index=_hfrx_names.index(_hfrx_cur), key='hfrx_sel')
+
+with c_tog:
+    st.markdown(_ALIGN, unsafe_allow_html=True)
     tr = st.toggle("Exclude ≥3σ Outliers", value=st.session_state['trimmed'])
     st.session_state['trimmed'] = tr
 
-with c5:
-    st.markdown('<div style="height:26px;"></div>', unsafe_allow_html=True)
-    if st.button("Clear Data"):
-        for k in ['fund_df','outliers_df','parse_diag']:
-            st.session_state[k] = None
-        st.rerun()
-
-
-_render_pdf_picker()
-
-_hfrx_names = list(HFRX_INDICES.keys())
-_hfrx_cur = st.session_state.get('hfrx_choice', _hfrx_names[0])
-if _hfrx_cur not in _hfrx_names:
-    _hfrx_cur = _hfrx_names[0]
-_hc, _hpad = st.columns([1.6, 4.4])
-with _hc:
-    st.session_state['hfrx_choice'] = st.selectbox(
-        "Hedge Fund Index (HFRX)", _hfrx_names,
-        index=_hfrx_names.index(_hfrx_cur), key='hfrx_sel')
 bm3_name = st.session_state['hfrx_choice']
 bm3_df = HFRX_INDICES[bm3_name]
+
+_render_pdf_picker()
 
 
 # ─── RESOLVE DATA ─────────────────────────────────────────────────────────────
