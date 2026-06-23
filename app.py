@@ -575,7 +575,7 @@ def _render_pdf_picker():
 
     cprev, cmeta = st.columns([2, 3])
     with cprev:
-        st.dataframe(prev, height=260, hide_index=True, use_container_width=True, config={'displayModeBar': False})
+        st.dataframe(prev, height=260, hide_index=True, use_container_width=True)
     with cmeta:
         _default_name = sel['label']
         if _default_name == 'Returns':
