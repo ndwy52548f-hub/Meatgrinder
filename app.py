@@ -101,6 +101,17 @@ section[data-testid="stFileUploaderDropzone"] {
   min-width: 0 !important;
   width: fit-content !important;
 }
+/* Relabel the uploader button text to be descriptive */
+section[data-testid="stFileUploaderDropzone"] button {
+  font-size: 0 !important;
+}
+section[data-testid="stFileUploaderDropzone"] button::after {
+  content: "Upload Fund Data";
+  font-size: 13px !important;
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.3px;
+}
 
 /* Buttons — solid teal, thick border, sized to content */
 [data-testid="stButton"] button {
