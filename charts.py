@@ -101,7 +101,9 @@ def chart_cumulative(fund_df: pd.DataFrame,
                      bm1_df: pd.DataFrame | None = None,
                      bm1_name: str = 'MSCI World Hdg',
                      bm2_df: pd.DataFrame | None = None,
-                     bm2_name: str = 'Bloomberg Agg') -> go.Figure:
+                     bm2_name: str = 'Bloomberg Agg',
+                     bm3_df: pd.DataFrame | None = None,
+                     bm3_name: str = '') -> go.Figure:
     """Cumulative wealth (growth of $100) chart."""
     fig = go.Figure()
 
@@ -140,6 +142,18 @@ def chart_cumulative(fund_df: pd.DataFrame,
                 hovertemplate='%{y:.1f}<extra>' + bm2_name + '</extra>'
             ))
 
+    if bm3_df is not None:
+        merged3 = fund_df.merge(bm3_df, on=['year','month'])
+        if len(merged3) > 0:
+            bm3_ret_col = 'ret_y' if 'ret_y' in merged3.columns else 'ret'
+            w3 = 100 * np.cumprod(1 + merged3[bm3_ret_col].values / 100)
+            fig.add_trace(go.Scatter(
+                x=_date_labels(merged3),
+                y=w3, name=bm3_name,
+                line=dict(color=C['green'], width=1.8, dash='dot'),
+                hovertemplate='%{y:.1f}<extra>' + bm3_name + '</extra>'
+            ))
+
     fig.update_layout(showlegend=True)
     _tv, _tt = _date_ticks(fund_df)
     _apply_base(fig,
@@ -152,6 +166,7 @@ def chart_cumulative(fund_df: pd.DataFrame,
         legend=dict(orientation='h', yanchor='bottom', y=1.01, xanchor='right', x=1,
                     font=dict(size=13))
     )
+    fig.update_layout(showlegend=True)
     return fig
 
 
@@ -527,7 +542,9 @@ def chart_seasonality_quarterly(seas: dict) -> go.Figure:
 def chart_best_worst(fund_df: pd.DataFrame,
                      mkt_df: pd.DataFrame, mkt_name: str,
                      alt_df: pd.DataFrame, alt_name: str,
-                     n: int = 10, worst: bool = True) -> go.Figure:
+                     n: int = 10, worst: bool = True,
+                     bm3_df: pd.DataFrame | None = None,
+                     bm3_name: str = '') -> go.Figure:
     """The market's worst/best N months with the strategy's and an alternative
     index's concurrent returns — a tail co-movement (correlation) view."""
     m = fund_df[['year', 'month', 'ret']].rename(columns={'ret': 'fund'})
@@ -535,6 +552,10 @@ def chart_best_worst(fund_df: pd.DataFrame,
                 on=['year', 'month'], how='inner')
     m = m.merge(alt_df[['year', 'month', 'ret']].rename(columns={'ret': 'alt'}),
                 on=['year', 'month'], how='inner')
+    has_bm3 = bm3_df is not None
+    if has_bm3:
+        m = m.merge(bm3_df[['year', 'month', 'ret']].rename(columns={'ret': 'bm3'}),
+                    on=['year', 'month'], how='inner')
     if m.empty:
         return go.Figure()
     m = m.nsmallest(n, 'mkt') if worst else m.nlargest(n, 'mkt')  # most extreme first
@@ -544,6 +565,8 @@ def chart_best_worst(fund_df: pd.DataFrame,
     series = [('Strategy', m['fund'].values, C['accent']),
               (mkt_name,    m['mkt'].values,  C['gold']),
               (alt_name,    m['alt'].values,  '#7FD4FF')]
+    if has_bm3:
+        series.append((bm3_name, m['bm3'].values, C['green']))
     for name, vals, color in series:
         fig.add_trace(go.Bar(
             y=labels, x=vals, orientation='h', name=name,
@@ -559,4 +582,56 @@ def chart_best_worst(fund_df: pd.DataFrame,
         yaxis=dict(autorange='reversed',
                    tickfont=dict(family=FONT_MONO, size=12, color=C['axis'])),
         height=440)
+    fig.update_layout(showlegend=True)
+    return fig
+
+
+def chart_up_down_capture(fund_df: pd.DataFrame, fund_name: str,
+                          mkt_df: pd.DataFrame, mkt_name: str,
+                          others=None) -> go.Figure:
+    """Up / down capture: average monthly return in up-market vs down-market
+    months. 'Up' / 'down' are defined by the market (mkt_df) being positive /
+    negative over the fund's history; each series' mean return across those two
+    regimes is shown as grouped bars. `others` is a list of (name, df) for any
+    additional benchmarks (e.g. Bloomberg Agg, and later HFRX)."""
+    others = others or []
+    m = fund_df[['year', 'month', 'ret']].rename(columns={'ret': '__fund'})
+    m = m.merge(mkt_df[['year', 'month', 'ret']].rename(columns={'ret': '__mkt'}),
+                on=['year', 'month'], how='inner')
+    series = [(fund_name, '__fund', C['accent']),
+              (mkt_name,  '__mkt',  C['gold'])]
+    palette = ['#7FD4FF', C['green'], C['muted'], C['red']]
+    for i, (nm, df) in enumerate(others):
+        key = f'__o{i}'
+        m = m.merge(df[['year', 'month', 'ret']].rename(columns={'ret': key}),
+                    on=['year', 'month'], how='inner')
+        series.append((nm, key, palette[i % len(palette)]))
+    if m.empty:
+        return go.Figure()
+
+    up = m['__mkt'] > 0
+    dn = m['__mkt'] < 0
+    cats = ['Up Average ROR', 'Down Average ROR']
+
+    fig = go.Figure()
+    for nm, key, color in series:
+        up_avg = float(m.loc[up, key].mean()) if up.any() else 0.0
+        dn_avg = float(m.loc[dn, key].mean()) if dn.any() else 0.0
+        fig.add_trace(go.Bar(
+            x=cats, y=[up_avg, dn_avg], name=nm,
+            marker_color=color, marker_line_color=C['surface'], marker_line_width=0.6,
+            hovertemplate='%{y:.2f}%<extra>' + nm + '</extra>'))
+
+    _apply_base(fig,
+        xaxis=dict(tickfont=dict(family=FONT_UI, size=14, color=C['axis']),
+                   linecolor=C['border'], zeroline=False),
+        yaxis=dict(title='Avg Monthly Return (%)', ticksuffix='%', gridcolor=C['grid'],
+                   zeroline=True, zerolinecolor=C['border'], zerolinewidth=1.5,
+                   tickfont=dict(family=FONT_MONO, size=13, color=C['axis']),
+                   title_font=dict(family=FONT_UI, size=14, color=C['axis'])),
+        height=440, hovermode='closest')
+    # set legend AFTER base so it isn't overridden by LAYOUT_BASE's showlegend=False
+    fig.update_layout(showlegend=True, barmode='group', bargap=0.32, bargroupgap=0.08,
+                      legend=dict(orientation='h', yanchor='bottom', y=1.01, x=0,
+                                  font=dict(family=FONT_UI, size=13, color=C['axis'])))
     return fig

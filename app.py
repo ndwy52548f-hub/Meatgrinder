@@ -15,14 +15,14 @@ from analytics import (
     compute_outliers, normality_tests, top_drawdowns, period_stats,
     seasonality, macro_events_table, piecewise_beta_regression,
     acf, acf_conf_band, rolling_metrics, parse_uploaded_file,
-    MSCI_DF, AGG_DF,
+    MSCI_DF, AGG_DF, HFRX_INDICES,
 )
 from pdf_extract import extract_return_series
 from charts import (
     chart_cumulative, chart_drawdowns, chart_monthly_bars,
     chart_histogram, chart_qq, chart_acf, chart_calendar_heatmap,
     chart_rolling, chart_regression, chart_seasonality_monthly,
-    chart_seasonality_quarterly, chart_best_worst, MN,
+    chart_seasonality_quarterly, chart_best_worst, chart_up_down_capture, MN,
 )
 
 # ─── PAGE CONFIG ──────────────────────────────────────────────────────────────
@@ -187,6 +187,17 @@ label[data-testid="stWidgetLabel"] p {
   font-size: 10px;
   color: #BFE4E4;
   letter-spacing: 0.5px;
+}
+.mg-topbar .fund {
+  font-family: 'Inter', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  color: #FFFFFF;
+  letter-spacing: 1px;
+  max-width: 60vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Fund identity */
@@ -505,6 +516,7 @@ for k, v in {
     'outliers_df': None, 'trimmed': False,
     'parse_diag': None, 'bm_choice': 'MSCI World Hedged USD',
     'pdf_candidates': None, 'pdf_warns': None, 'pdf_sig': None,
+    'hfrx_choice': None,
 }.items():
     if k not in st.session_state:
         st.session_state[k] = v
@@ -520,11 +532,20 @@ def _load_pdf_file(up):
         st.session_state['pdf_candidates'] = cands
         st.session_state['pdf_warns'] = warns
         st.session_state['pdf_sig'] = sig
+        st.session_state['pdf_name_default'] = _name_from_file(up.name)
 
 
 def _clear_pdf_state():
     for k in ('pdf_candidates', 'pdf_warns', 'pdf_sig'):
         st.session_state[k] = None
+
+
+def _name_from_file(filename):
+    """A readable default fund name from an uploaded file name."""
+    import os
+    base = os.path.splitext(os.path.basename(filename or ''))[0]
+    base = base.replace('_', ' ').replace('-', ' ').strip()
+    return base or 'Fund'
 
 
 def _render_pdf_picker():
@@ -552,7 +573,10 @@ def _render_pdf_picker():
     with cprev:
         st.dataframe(prev, height=260, hide_index=True, use_container_width=True)
     with cmeta:
-        name = st.text_input("Fund name", value=sel['label'], key="pdf_name")
+        _default_name = sel['label']
+        if _default_name == 'Returns':
+            _default_name = st.session_state.get('pdf_name_default') or 'Returns'
+        name = st.text_input("Fund name", value=_default_name, key="pdf_name")
         st.caption(f"{sel['n']} monthly returns · "
                    f"{int(sel['df'].iloc[0]['year'])}\u2013"
                    f"{int(sel['df'].iloc[-1]['year'])}")
@@ -580,9 +604,12 @@ def _render_pdf_picker():
 
 # ─── TOP BAR ──────────────────────────────────────────────────────────────────
 
-st.markdown("""
+_tb_fund = st.session_state['fund_name'] if st.session_state['fund_df'] is not None else ''
+_tb_fund_html = f'<div class="fund">{_tb_fund}</div>' if _tb_fund else ''
+st.markdown(f"""
 <div class="mg-topbar">
   <div class="brand">Argus</div>
+  {_tb_fund_html}
 </div>
 """, unsafe_allow_html=True)
 
@@ -645,6 +672,7 @@ if st.session_state['fund_df'] is None:
                     'fund_df': df,
                     'outliers_df': compute_outliers(df),
                     'parse_diag': diag,
+                    'fund_name': _name_from_file(up.name),
                 })
                 st.rerun()
 
@@ -672,6 +700,7 @@ with c1:
                     'fund_df': df2,
                     'outliers_df': compute_outliers(df2),
                     'parse_diag': diag2,
+                    'fund_name': _name_from_file(new_up.name),
                 })
                 st.rerun()
 
@@ -693,6 +722,18 @@ with c5:
 
 
 _render_pdf_picker()
+
+_hfrx_names = list(HFRX_INDICES.keys())
+_hfrx_cur = st.session_state.get('hfrx_choice', _hfrx_names[0])
+if _hfrx_cur not in _hfrx_names:
+    _hfrx_cur = _hfrx_names[0]
+_hc, _hpad = st.columns([1.6, 4.4])
+with _hc:
+    st.session_state['hfrx_choice'] = st.selectbox(
+        "Hedge Fund Index (HFRX)", _hfrx_names,
+        index=_hfrx_names.index(_hfrx_cur), key='hfrx_sel')
+bm3_name = st.session_state['hfrx_choice']
+bm3_df = HFRX_INDICES[bm3_name]
 
 
 # ─── RESOLVE DATA ─────────────────────────────────────────────────────────────
@@ -922,16 +963,19 @@ with tabs[0]:
                     'Excess Kurtosis': excess_kurtosis(r),
                 }
 
-            bm1_al = fund_df_raw.merge(bm1_df, on=['year','month'], suffixes=('','_b'))\
-                                 .rename(columns={'ret_b':'ret'})[['year','month','ret']]
+            bm1_al = fund_df_raw.merge(bm1_df, on=['year','month'], suffixes=('','_b'))[['year','month','ret_b']]\
+                                 .rename(columns={'ret_b':'ret'})
             bm2_al = None
             if bm2_df is not None:
-                bm2_al = fund_df_raw.merge(bm2_df, on=['year','month'], suffixes=('','_b'))\
-                                     .rename(columns={'ret_b':'ret'})[['year','month','ret']]
+                bm2_al = fund_df_raw.merge(bm2_df, on=['year','month'], suffixes=('','_b'))[['year','month','ret_b']]\
+                                     .rename(columns={'ret_b':'ret'})
+            bm3_al = fund_df_raw.merge(bm3_df, on=['year','month'], suffixes=('','_b'))[['year','month','ret_b']]\
+                                 .rename(columns={'ret_b':'ret'})
 
             fs = _bm_stats(fund_df_raw)
             b1 = _bm_stats(bm1_al)
             b2 = _bm_stats(bm2_al) if bm2_al is not None else {}
+            b3 = _bm_stats(bm3_al) if len(bm3_al) > 0 else {}
 
             bm_defs = [
                 ('Ann. Return',     True,  2, False),
@@ -944,11 +988,12 @@ with tabs[0]:
                 ('Excess Kurtosis', False, 4, False),
             ]
             b2h = f'<th>{bm2_name}</th>' if bm2_al is not None else ''
+            b3h = f'<th>{bm3_name}</th>' if b3 else ''
             html2 = f"""<table class="mg-tbl">
-<thead><tr><th>Metric</th><th>{fund_name}</th><th>{bm1_name}</th>{b2h}</tr></thead><tbody>"""
+<thead><tr><th>Metric</th><th>{fund_name}</th><th>{bm1_name}</th>{b2h}{b3h}</tr></thead><tbody>"""
             for (m, pct, dec, flip) in bm_defs:
                 html2 += f'<tr><td class="lbl">{m}</td>'
-                for st_d in ([fs, b1] + ([b2] if bm2_al is not None else [])):
+                for st_d in ([fs, b1] + ([b2] if bm2_al is not None else []) + ([b3] if b3 else [])):
                     v = st_d.get(m, np.nan)
                     try:
                         c = _cls(float(v), flip)
@@ -961,7 +1006,7 @@ with tabs[0]:
 
         st.markdown('<div class="mg-sh" style="margin-top:28px;">Cumulative Wealth — Growth of $100</div>', unsafe_allow_html=True)
         st.plotly_chart(
-            chart_cumulative(fund_df, fund_name, bm1_df, bm1_name or '', bm2_df, bm2_name or ''),
+            chart_cumulative(fund_df, fund_name, bm1_df, bm1_name or '', bm2_df, bm2_name or '', bm3_df, bm3_name),
             use_container_width=True
         )
 
@@ -992,7 +1037,7 @@ with tabs[1]:
             return f'background:rgba(26,138,80,{0.10 + 0.50 * t:.2f});'
         return f'background:rgba(204,34,34,{0.10 + 0.50 * (-t):.2f});'
 
-    _cal_series = [(fund_name, fund_df), ('MSCI World Hdg', MSCI_DF), ('Bloomberg Agg', AGG_DF)]
+    _cal_series = [(fund_name, fund_df), ('MSCI World Hdg', MSCI_DF), ('Bloomberg Agg', AGG_DF), (bm3_name, bm3_df)]
     _luts = [(nm, _ret_lut(d)) for nm, d in _cal_series]
     _years = sorted({int(r.year) for r in fund_df.itertuples()})
 
@@ -1190,16 +1235,25 @@ with tabs[4]:
     _render_regression(piecewise_beta_regression(fund_df, MSCI_DF), 'MSCI World Hdg')
     st.markdown('<div style="height:12px;"></div>', unsafe_allow_html=True)
     _render_regression(piecewise_beta_regression(fund_df, AGG_DF), 'Bloomberg Agg')
+    st.markdown('<div style="height:12px;"></div>', unsafe_allow_html=True)
+    _render_regression(piecewise_beta_regression(fund_df, bm3_df), bm3_name)
 
     st.markdown('<div class="mg-sh" style="margin-top:14px;">Co-Movement in Market Extremes</div>', unsafe_allow_html=True)
     st.markdown('<div class="mg-note">The market\'s most extreme months with the strategy\'s concurrent return — a tail-correlation view. (No hedge-fund index in the dataset; Bloomberg Agg shown as the third series.)</div>', unsafe_allow_html=True)
     c_bw_l, c_bw_r = st.columns(2, gap="large")
     with c_bw_l:
         st.markdown('<div class="mg-sh">Market\'s Worst 10 Months</div>', unsafe_allow_html=True)
-        st.plotly_chart(chart_best_worst(fund_df, MSCI_DF, 'MSCI World Hdg', AGG_DF, 'Bloomberg Agg', 10, worst=True), use_container_width=True)
+        st.plotly_chart(chart_best_worst(fund_df, MSCI_DF, 'MSCI World Hdg', AGG_DF, 'Bloomberg Agg', 10, worst=True, bm3_df=bm3_df, bm3_name=bm3_name), use_container_width=True)
     with c_bw_r:
         st.markdown('<div class="mg-sh">Market\'s Best 10 Months</div>', unsafe_allow_html=True)
-        st.plotly_chart(chart_best_worst(fund_df, MSCI_DF, 'MSCI World Hdg', AGG_DF, 'Bloomberg Agg', 10, worst=False), use_container_width=True)
+        st.plotly_chart(chart_best_worst(fund_df, MSCI_DF, 'MSCI World Hdg', AGG_DF, 'Bloomberg Agg', 10, worst=False, bm3_df=bm3_df, bm3_name=bm3_name), use_container_width=True)
+
+    st.markdown('<div class="mg-sh" style="margin-top:14px;">Up / Down Capture</div>', unsafe_allow_html=True)
+    st.markdown('<div class="mg-note">Average monthly return in up-market vs. down-market months. Up and down months are defined by the market (MSCI World Hedged) being positive or negative.</div>', unsafe_allow_html=True)
+    st.plotly_chart(
+        chart_up_down_capture(fund_df, fund_name, MSCI_DF, 'MSCI World Hdg',
+                              others=[('Bloomberg Agg', AGG_DF), (bm3_name, bm3_df)]),
+        use_container_width=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
