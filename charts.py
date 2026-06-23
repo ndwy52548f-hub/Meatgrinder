@@ -544,7 +544,7 @@ def chart_best_worst(fund_df: pd.DataFrame,
                      alt_df: pd.DataFrame, alt_name: str,
                      n: int = 10, worst: bool = True,
                      bm3_df: pd.DataFrame | None = None,
-                     bm3_name: str = '') -> go.Figure:
+                     bm3_name: str = '', show_legend: bool = True) -> go.Figure:
     """The market's worst/best N months with the strategy's and an alternative
     index's concurrent returns — a tail co-movement (correlation) view."""
     m = fund_df[['year', 'month', 'ret']].rename(columns={'ret': 'fund'})
@@ -562,27 +562,31 @@ def chart_best_worst(fund_df: pd.DataFrame,
     labels = [f"{MN[int(r.month) - 1]} {int(r.year)}" for r in m.itertuples()]
 
     fig = go.Figure()
-    series = [('Strategy', m['fund'].values, C['accent']),
-              (mkt_name,    m['mkt'].values,  C['gold']),
-              (alt_name,    m['alt'].values,  '#7FD4FF')]
+    # Nested overlapping bars: thickest (market) at the back, thinnest (fund) on
+    # top, all sharing the zero baseline — so a fund +5% sits inside a mkt +10%.
+    # White plot background frees up the color palette.
+    series = [(mkt_name, m['mkt'].values, '#E8B23A', 0.78)]   # back, thickest
+    series.append((alt_name, m['alt'].values, '#5B9BD5', 0.56))
     if has_bm3:
-        series.append((bm3_name, m['bm3'].values, C['green']))
-    for name, vals, color in series:
+        series.append((bm3_name, m['bm3'].values, '#43B581', 0.40))
+    series.append(('Strategy', m['fund'].values, '#006B7A', 0.22))  # front, thinnest
+    for name, vals, color, width in series:
         fig.add_trace(go.Bar(
-            y=labels, x=vals, orientation='h', name=name,
-            marker_color=color, marker_line_color=C['surface'], marker_line_width=0.5,
+            y=labels, x=vals, orientation='h', name=name, width=width,
+            marker_color=color, marker_line_width=0,
             hovertemplate='%{x:.2f}%<extra>' + name + '</extra>'))
-    fig.update_layout(showlegend=True, barmode='group', bargap=0.28,
+    fig.update_layout(showlegend=show_legend, barmode='overlay',
                       legend=dict(orientation='h', yanchor='bottom', y=1.01, x=0))
     _apply_base(fig,
-        xaxis=dict(title='Return (%)', ticksuffix='%', gridcolor=C['grid'],
-                   zeroline=True, zerolinecolor=C['border'], zerolinewidth=1.5,
+        plot_bgcolor='#FFFFFF', hovermode='closest',
+        xaxis=dict(title='Return (%)', ticksuffix='%', gridcolor='#E5ECEC',
+                   zeroline=True, zerolinecolor='#1A1A1A', zerolinewidth=1.5,
                    tickfont=dict(family=FONT_MONO, size=13, color=C['axis']),
                    title_font=dict(family=FONT_UI, size=14, color=C['axis'])),
-        yaxis=dict(autorange='reversed',
+        yaxis=dict(autorange='reversed', gridcolor='#FFFFFF',
                    tickfont=dict(family=FONT_MONO, size=12, color=C['axis'])),
         height=440)
-    fig.update_layout(showlegend=True)
+    fig.update_layout(showlegend=show_legend)
     return fig
 
 

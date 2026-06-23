@@ -295,10 +295,10 @@ label[data-testid="stWidgetLabel"] p {
 /* Section heading */
 .mg-sh {
   font-family: 'Inter', sans-serif;
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 1.5px;
+  letter-spacing: 1.2px;
   color: #006B7A;
   padding-bottom: 10px;
   border-bottom: 1px solid #D2E0E0;
@@ -1237,14 +1237,13 @@ with tabs[4]:
     _render_regression(piecewise_beta_regression(fund_df, bm3_df), bm3_name)
 
     st.markdown('<div class="mg-sh" style="margin-top:14px;">Co-Movement in Market Extremes</div>', unsafe_allow_html=True)
-    st.markdown('<div class="mg-note">The market\'s most extreme months with the strategy\'s concurrent return — a tail-correlation view. (No hedge-fund index in the dataset; Bloomberg Agg shown as the third series.)</div>', unsafe_allow_html=True)
     c_bw_l, c_bw_r = st.columns(2, gap="large")
     with c_bw_l:
-        st.markdown('<div class="mg-sh">Market\'s Worst 10 Months</div>', unsafe_allow_html=True)
-        st.plotly_chart(chart_best_worst(fund_df, MSCI_DF, 'MSCI World Hdg', AGG_DF, 'Bloomberg Agg', 10, worst=True, bm3_df=bm3_df, bm3_name=bm3_name), use_container_width=True)
+        st.markdown('<div class="mg-sh">Market\'s Worst 5 Months</div>', unsafe_allow_html=True)
+        st.plotly_chart(chart_best_worst(fund_df, MSCI_DF, 'MSCI World Hdg', AGG_DF, 'Bloomberg Agg', 5, worst=True, bm3_df=bm3_df, bm3_name=bm3_name, show_legend=True), use_container_width=True)
     with c_bw_r:
-        st.markdown('<div class="mg-sh">Market\'s Best 10 Months</div>', unsafe_allow_html=True)
-        st.plotly_chart(chart_best_worst(fund_df, MSCI_DF, 'MSCI World Hdg', AGG_DF, 'Bloomberg Agg', 10, worst=False, bm3_df=bm3_df, bm3_name=bm3_name), use_container_width=True)
+        st.markdown('<div class="mg-sh">Market\'s Best 5 Months</div>', unsafe_allow_html=True)
+        st.plotly_chart(chart_best_worst(fund_df, MSCI_DF, 'MSCI World Hdg', AGG_DF, 'Bloomberg Agg', 5, worst=False, bm3_df=bm3_df, bm3_name=bm3_name, show_legend=False), use_container_width=True)
 
     st.markdown('<div class="mg-sh" style="margin-top:14px;">Up / Down Capture</div>', unsafe_allow_html=True)
     st.markdown('<div class="mg-note">Average monthly return in up-market vs. down-market months. Up and down months are defined by the market (MSCI World Hedged) being positive or negative.</div>', unsafe_allow_html=True)
