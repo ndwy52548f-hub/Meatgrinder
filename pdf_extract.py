@@ -142,6 +142,99 @@ def _dedupe(records):
     return df
 
 
+# ── Raw-text grid parser ──────────────────────────────────────────────────────
+# Some decks merge all twelve month columns into a single table cell, so the
+# cell-based parser sees no grid. The raw text, however, lays each row out as
+# "[year] <series name> v1 v2 … v12 [YTD]". This parser reads that, and also
+# scrubs diagonal-watermark characters that bleed into the numbers
+# (e.g. "o5.2%", "-2p.1%", "-10.2%c4.7%", stray single-letter tokens).
+
+_MONTHS_HEADER = re.compile(r'\bjan\b.*\bfeb\b.*\bdec\b', re.I)
+_VALUE_RE = re.compile(r'^-?\d+(?:\.\d+)?%?$')
+_DASHES = {'-', '\u2013', '\u2014'}
+
+
+def _scrub_line(line):
+    """De-glue two percentages joined by a watermark letter (label-safe)."""
+    return re.sub(r'%[A-Za-z@]+(?=-?\d)', '% ', line)
+
+
+def _text_tokens(line):
+    """Tokenise, dropping stray single-letter watermark fragments."""
+    return [t for t in line.split() if not (len(t) == 1 and t.isalpha()) and t != '@']
+
+
+def _token_value(tok):
+    """(is_value, value_or_None). Strips a stray watermark letter from a number;
+    None value means a dash (missing month)."""
+    c = re.sub(r'[A-Za-z@]', '', tok)
+    if c in _DASHES:
+        return True, None
+    if _VALUE_RE.match(c):
+        return True, float(c.replace('%', ''))
+    return False, None
+
+
+def _parse_text_grid(text):
+    """Parse a page's raw text into {label: [(year, month, ret), ...]}."""
+    series, last_year, armed = {}, None, False
+    for raw in (text or '').split('\n'):
+        if _MONTHS_HEADER.search(raw):
+            armed = True
+            continue
+        if not armed:
+            continue
+        toks = _text_tokens(_scrub_line(raw))
+        if not toks:
+            continue
+        yr = None
+        if _YEAR_RE.fullmatch(toks[0]):
+            yr = int(toks[0]); toks = toks[1:]
+        # maximal trailing run of value/dash tokens (stops at the label words)
+        run = []
+        for t in reversed(toks):
+            ok, v = _token_value(t)
+            if ok:
+                run.append(v)
+            else:
+                break
+        run.reverse()
+        n = len(run)
+        if n not in (12, 13):                 # 12 months, optionally + a YTD column
+            continue
+        months = run[:12] if n == 13 else run
+        label = ' '.join(toks[:len(toks) - n]).strip()
+        if not re.search(r'[A-Za-z]', label):
+            continue
+        y = yr if yr is not None else last_year
+        if yr is not None:
+            last_year = yr
+        if y is None:
+            continue
+        for mo, v in enumerate(months, start=1):
+            if v is not None:
+                series.setdefault(label, []).append((y, mo, v))
+    return series
+
+
+def _cumulative_return(df):
+    """Geometric cumulative return of a (year, month, ret%) frame."""
+    return float((1 + df['ret'] / 100.0).prod() - 1)
+
+
+# Index/benchmark names that should never be mistaken for the fund's own track.
+_BENCHMARK_KEYWORDS = (
+    'HFRI', 'HFRX', 'HFR ', 'S&P', 'SP500', 'MSCI', 'RUSSELL', 'BLOOMBERG',
+    'BARCLAYS', 'BBG', ' AGG', 'ACWI', 'INDEX', 'TREASURY', 'NASDAQ', 'DOW ',
+    'EUREKAHEDGE', 'CISDM', 'CREDIT SUISSE', 'BENCHMARK', 'HIGH YIELD', 'US HY',
+)
+
+
+def _is_benchmark(label):
+    L = ' ' + label.upper() + ' '
+    return any(k in L for k in _BENCHMARK_KEYWORDS)
+
+
 def extract_return_series(file_like):
     """
     Extract candidate monthly-return series from a PDF.
@@ -166,7 +259,7 @@ def extract_return_series(file_like):
             try:
                 tables = page.extract_tables() or []
             except Exception:
-                continue
+                tables = []
             for table in tables:
                 if not table or len(table) < 2:
                     continue
@@ -180,6 +273,21 @@ def extract_return_series(file_like):
                             'n': len(df),
                             'page': pno,
                         })
+            # Also parse the page's raw text: catches decks whose table cells
+            # merge all month columns, and scrubs watermark contamination.
+            try:
+                page_text = page.extract_text() or ''
+            except Exception:
+                page_text = ''
+            for label, recs in _parse_text_grid(page_text).items():
+                df = _dedupe(recs)
+                if len(df) >= 6:
+                    candidates.append({
+                        'label': label.strip()[:60] or 'Returns',
+                        'df': df,
+                        'n': len(df),
+                        'page': pno,
+                    })
 
     # merge candidates with the same label across pages (multi-page track records)
     merged = {}
@@ -192,6 +300,20 @@ def extract_return_series(file_like):
         else:
             merged[key] = c
     candidates = sorted(merged.values(), key=lambda c: c['n'], reverse=True)
+
+    # Confusing decks list several share classes (and benchmarks). Ingest ONE
+    # record: drop benchmark-looking series, then keep the single lowest-return
+    # share class (the most conservative, highest-fee net stream).
+    if len(candidates) > 1:
+        n_before = len(candidates)
+        funds = [c for c in candidates if not _is_benchmark(c['label'])]
+        pool = funds if funds else candidates
+        chosen = min(pool, key=lambda c: _cumulative_return(c['df']))
+        if n_before > 1:
+            warnings.append(
+                f"{n_before} series found; ingested the lowest-return share class "
+                f"(\"{chosen['label']}\") and discarded the rest.")
+        candidates = [chosen]
 
     if not candidates:
         warnings.append('No monthly-return grid was found in this PDF. The table '
