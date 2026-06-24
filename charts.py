@@ -158,14 +158,15 @@ def chart_cumulative(fund_df: pd.DataFrame,
     fig.update_layout(showlegend=True)
     _tv, _tt = _date_ticks(fund_df)
     _apply_base(fig,
-        yaxis_title='Growth of $100',
+        yaxis_title='Growth of $100', height=620,
         xaxis=dict(tickmode='array', tickangle=0, tickvals=_tv, ticktext=_tt,
                    gridcolor=C['grid'], linecolor=C['border'], zeroline=False,
                    tickfont=dict(family=FONT_MONO, size=13, color=C['axis'])),
         yaxis=dict(tickformat=',.0f', gridcolor=C['grid'],
                    tickfont=dict(family=FONT_MONO, size=13, color=C['axis'])),
-        legend=dict(orientation='h', yanchor='bottom', y=1.01, xanchor='right', x=1,
-                    font=dict(size=13))
+        legend=dict(orientation='v', yanchor='top', y=0.98, xanchor='left', x=0.02,
+                    bgcolor='rgba(0,0,0,0)', borderwidth=0,
+                    font=dict(size=13, color=C['text']))
     )
     fig.update_layout(showlegend=True)
     return fig
