@@ -113,7 +113,7 @@ def chart_cumulative(fund_df: pd.DataFrame,
     fig.add_trace(go.Scatter(
         x=labels, y=wealth, name=fund_name,
         line=dict(color=C['accent'], width=2.5),
-        hovertemplate='%{y:.1f}<extra>' + fund_name + '</extra>'
+        hovertemplate='%{y:.2f}<extra>' + fund_name + '</extra>'
     ))
 
     if bm1_df is not None:
@@ -128,7 +128,7 @@ def chart_cumulative(fund_df: pd.DataFrame,
                 x=_date_labels(fund_df.merge(bm1_df, on=['year','month'])),
                 y=w, name=bm1_name,
                 line=dict(color=C['gold'], width=1.8, dash='dot'),
-                hovertemplate='%{y:.1f}<extra>' + bm1_name + '</extra>'
+                hovertemplate='%{y:.2f}<extra>' + bm1_name + '</extra>'
             ))
 
     if bm2_df is not None:
@@ -140,7 +140,7 @@ def chart_cumulative(fund_df: pd.DataFrame,
                 x=_date_labels(merged2),
                 y=w2, name=bm2_name,
                 line=dict(color='#7FD4FF', width=1.8, dash='dot'),
-                hovertemplate='%{y:.1f}<extra>' + bm2_name + '</extra>'
+                hovertemplate='%{y:.2f}<extra>' + bm2_name + '</extra>'
             ))
 
     if bm3_df is not None:
@@ -152,7 +152,7 @@ def chart_cumulative(fund_df: pd.DataFrame,
                 x=_date_labels(merged3),
                 y=w3, name=bm3_name,
                 line=dict(color=C['green'], width=1.8, dash='dot'),
-                hovertemplate='%{y:.1f}<extra>' + bm3_name + '</extra>'
+                hovertemplate='%{y:.2f}<extra>' + bm3_name + '</extra>'
             ))
 
     fig.update_layout(showlegend=True)
@@ -180,20 +180,21 @@ def chart_drawdowns(fund_df: pd.DataFrame) -> go.Figure:
     fig.add_trace(go.Scatter(
         x=labels, y=dd,
         fill='tozeroy',
-        fillcolor='rgba(192,24,42,0.15)',
-        line=dict(color=C['red'], width=1.5),
+        fillcolor='rgba(169,52,32,0.16)',
+        line=dict(color='#A93420', width=1.5),
         hovertemplate='%{y:.2f}%<extra>Drawdown</extra>'
     ))
     _tv, _tt = _date_ticks(fund_df)
     _ymin = float(np.min(dd)) if len(dd) else -1.0
     _apply_base(fig,
+                plot_bgcolor='#FFFFFF',
                 xaxis=dict(tickmode='array', tickangle=0, tickvals=_tv, ticktext=_tt,
-                           gridcolor=C['grid'], linecolor=C['border'], zeroline=False,
-                           tickfont=dict(family=FONT_MONO, size=13, color=C['axis'])),
-                yaxis=dict(title='Drawdown (%)', ticksuffix='%', gridcolor=C['grid'],
+                           gridcolor='#E5ECEC', linecolor='#1A1A1A', zeroline=False,
+                           tickfont=dict(family=FONT_MONO, size=13, color='#1A1A1A')),
+                yaxis=dict(title='Drawdown (%)', ticksuffix='%', gridcolor='#E5ECEC',
                            range=[_ymin * 1.08, 0], autorange=False,
-                           tickfont=dict(family=FONT_MONO, size=13, color=C['axis']),
-                           title_font=dict(family=FONT_UI, size=14, color=C['axis'])))
+                           tickfont=dict(family=FONT_MONO, size=13, color='#1A1A1A'),
+                           title_font=dict(family=FONT_UI, size=14, color='#1A1A1A')))
     return fig
 
 
@@ -203,19 +204,20 @@ def chart_monthly_bars(fund_df: pd.DataFrame) -> go.Figure:
     fig = go.Figure()
     rets = fund_df['ret'].values
     labels = _date_labels(fund_df)
-    colors = [C['green'] if r >= 0 else C['red'] for r in rets]
+    _sc = float(np.nanmax(np.abs(rets))) if len(rets) else 1.0
+    colors = [_wf_color(r, _sc) for r in rets]
     fig.add_trace(go.Bar(
         x=labels, y=rets,
-        marker_color=colors,
+        marker_color=colors, marker_line_width=0,
         hovertemplate='%{y:.2f}%<extra></extra>'
     ))
-    _apply_base(fig, yaxis_title='Monthly Return (%)',
+    _apply_base(fig, yaxis_title='Monthly Return (%)', plot_bgcolor='#FFFFFF',
                 xaxis=dict(tickmode='array', tickangle=0, tickvals=_date_ticks(fund_df)[0],
                            ticktext=_date_ticks(fund_df)[1],
-                           gridcolor=C['grid'], linecolor=C['border'], zeroline=False,
-                           tickfont=dict(family=FONT_MONO, size=13, color=C['axis'])),
-                yaxis=dict(ticksuffix='%', gridcolor=C['grid'],
-                           tickfont=dict(family=FONT_MONO, size=13, color=C['axis'])),
+                           gridcolor='#E5ECEC', linecolor='#1A1A1A', zeroline=False,
+                           tickfont=dict(family=FONT_MONO, size=13, color='#1A1A1A')),
+                yaxis=dict(ticksuffix='%', gridcolor='#E5ECEC',
+                           tickfont=dict(family=FONT_MONO, size=13, color='#1A1A1A')),
                 bargap=0.1)
     return fig
 
@@ -227,26 +229,26 @@ def chart_histogram(fund_df: pd.DataFrame, outliers_df: pd.DataFrame | None = No
     rets = fund_df['ret'].values
     m, s = np.mean(rets), np.std(rets, ddof=1)
 
-    # Histogram
-    fig.add_trace(go.Histogram(
-        x=rets,
-        nbinsx=30,
-        marker_color=C['accent_lt'],
-        marker_line_color=C['accent'],
-        marker_line_width=0.8,
+    # Histogram — manual bins so each bar can be coloured by the sign of its return
+    counts, edges = np.histogram(rets, bins=30)
+    centers = (edges[:-1] + edges[1:]) / 2
+    bin_width = (edges[-1] - edges[0]) / 30
+    _sc = float(np.nanmax(np.abs(centers))) if len(centers) else 1.0
+    fig.add_trace(go.Bar(
+        x=centers, y=counts, width=bin_width,
+        marker_color=[_wf_color(c, _sc) for c in centers],
+        marker_line_color='#FFFFFF', marker_line_width=0.5,
         name='Monthly Returns',
-        hovertemplate='%{x:.1f}% : %{y} months<extra></extra>'
+        hovertemplate='%{x:.2f}% : %{y} months<extra></extra>'
     ))
 
     # Normal overlay
     x_range = np.linspace(m - 4*s, m + 4*s, 200)
     from scipy.stats import norm
-    scale = len(rets) * (rets.max() - rets.min()) / 30  # approximate bin width scale
-    bin_width = (rets.max() - rets.min()) / 30
     y_normal = norm.pdf(x_range, m, s) * len(rets) * bin_width
     fig.add_trace(go.Scatter(
         x=x_range, y=y_normal,
-        line=dict(color=C['red'], width=1.5),
+        line=dict(color='#1A1A1A', width=1.5, dash='dot'),
         name='Normal Fit',
         hoverinfo='skip'
     ))
@@ -254,17 +256,17 @@ def chart_histogram(fund_df: pd.DataFrame, outliers_df: pd.DataFrame | None = No
     # Mark outliers
     if outliers_df is not None and len(outliers_df) > 0:
         for r in outliers_df['ret']:
-            fig.add_vline(x=r, line_color=C['gold'], line_dash='dot', line_width=1.2)
+            fig.add_vline(x=r, line_color='#E0A93C', line_dash='dot', line_width=1.2)
         # legend entry so the dotted lines are explained
         fig.add_trace(go.Scatter(
             x=[None], y=[None], mode='lines',
-            line=dict(color=C['gold'], dash='dot', width=1.2),
+            line=dict(color='#E0A93C', dash='dot', width=1.2),
             name='≥3σ Outlier'
         ))
 
     fig.update_layout(showlegend=True, barmode='overlay')
 
-    # quick-read distribution stats in the open teal space (white)
+    # quick-read distribution stats, top-left on white
     sk = skewness(rets)
     ku = excess_kurtosis(rets)
     fig.add_annotation(
@@ -273,11 +275,16 @@ def chart_histogram(fund_df: pd.DataFrame, outliers_df: pd.DataFrame | None = No
         text=(f"Mean   {m:+.2f}%<br>"
               f"Skew   {sk:+.2f}<br>"
               f"Kurt   {ku:+.2f}"),
-        font=dict(family=FONT_MONO, size=14, color='#FFFFFF')
+        font=dict(family=FONT_MONO, size=14, color='#1A1A1A')
     )
 
     _apply_base(fig,
         xaxis_title='Monthly Return (%)', yaxis_title='Frequency',
+        plot_bgcolor='#FFFFFF',
+        xaxis=dict(gridcolor='#E5ECEC', zeroline=False,
+                   tickfont=dict(family=FONT_MONO, size=13, color='#1A1A1A')),
+        yaxis=dict(gridcolor='#E5ECEC',
+                   tickfont=dict(family=FONT_MONO, size=13, color='#1A1A1A')),
         legend=dict(orientation='h', yanchor='bottom', y=1.01, x=0),
     )
     return fig
@@ -294,7 +301,7 @@ def chart_qq(fund_df: pd.DataFrame) -> go.Figure:
     fig.add_trace(go.Scatter(
         x=th, y=obs, mode='markers',
         marker=dict(color=C['accent'], size=6, opacity=0.7),
-        hovertemplate='Theoretical: %{x:.3f}<br>Observed: %{y:.3f}<extra></extra>'
+        hovertemplate='Theoretical: %{x:.4f}<br>Observed: %{y:.4f}<extra></extra>'
     ))
 
     # 45° reference line
@@ -413,7 +420,7 @@ def chart_rolling(fund_df: pd.DataFrame, metric: str = 'roll_ret') -> go.Figure:
     else:
         fig.add_trace(go.Scatter(x=labels, y=y,
                                  line=dict(color=C['accent'], width=2),
-                                 hovertemplate=f'%{{y:.3f}}{suffix}<extra></extra>'))
+                                 hovertemplate=f'%{{y:.2f}}{suffix}<extra></extra>'))
         fig.add_hline(y=0, line_color=C['border'], line_width=1)
 
     _tv, _tt = _date_ticks(roll)
@@ -500,22 +507,23 @@ def chart_seasonality_monthly(seas: dict) -> go.Figure:
     monthly = seas['monthly']
     months = [MN[int(m)-1] for m in monthly['month']]
     means = monthly['mean'].values
-    colors = [C['green'] if v >= 0 else C['red'] for v in means]
+    _sc = float(np.nanmax(np.abs(means))) if len(means) else 1.0
+    colors = [_wf_color(v, _sc) for v in means]
 
     fig.add_trace(go.Bar(
         x=months, y=means,
-        marker_color=colors,
+        marker_color=colors, marker_line_width=0,
         error_y=dict(
             type='data',
             array=(monthly['std'] / np.sqrt(monthly['count'])).values,
-            visible=True, color=C['muted'], thickness=1.5
+            visible=True, color='#8A9BA0', thickness=1.5
         ),
         hovertemplate='%{x}: %{y:.2f}%<extra></extra>'
     ))
-    fig.add_hline(y=0, line_color=C['border'], line_width=1)
-    _apply_base(fig, yaxis_title='Average Monthly Return (%)',
-                yaxis=dict(ticksuffix='%', gridcolor=C['grid'],
-                           tickfont=dict(family=FONT_MONO, size=13, color=C['axis'])))
+    fig.add_hline(y=0, line_color='#1A1A1A', line_width=1)
+    _apply_base(fig, yaxis_title='Average Monthly Return (%)', plot_bgcolor='#FFFFFF',
+                yaxis=dict(ticksuffix='%', gridcolor='#E5ECEC',
+                           tickfont=dict(family=FONT_MONO, size=13, color='#1A1A1A')))
     return fig
 
 
@@ -524,17 +532,18 @@ def chart_seasonality_quarterly(seas: dict) -> go.Figure:
     quarterly = seas['quarterly']
     quarters = [f"Q{int(q)}" for q in quarterly['quarter']]
     means = quarterly['mean'].values
-    colors = [C['green'] if v >= 0 else C['red'] for v in means]
+    _sc = float(np.nanmax(np.abs(means))) if len(means) else 1.0
+    colors = [_wf_color(v, _sc) for v in means]
 
     fig.add_trace(go.Bar(
         x=quarters, y=means,
-        marker_color=colors,
+        marker_color=colors, marker_line_width=0,
         hovertemplate='%{x}: %{y:.2f}%<extra></extra>'
     ))
-    fig.add_hline(y=0, line_color=C['border'], line_width=1)
-    _apply_base(fig, yaxis_title='Average Quarterly Return (%)',
-                yaxis=dict(ticksuffix='%', gridcolor=C['grid'],
-                           tickfont=dict(family=FONT_MONO, size=13, color=C['axis'])))
+    fig.add_hline(y=0, line_color='#1A1A1A', line_width=1)
+    _apply_base(fig, yaxis_title='Average Quarterly Return (%)', plot_bgcolor='#FFFFFF',
+                yaxis=dict(ticksuffix='%', gridcolor='#E5ECEC',
+                           tickfont=dict(family=FONT_MONO, size=13, color='#1A1A1A')))
     return fig
 
 
@@ -757,7 +766,7 @@ def chart_shocks(fund_df: pd.DataFrame, fund_name: str,
         fig.add_trace(go.Bar(
             y=names[::-1], x=vals[::-1], orientation='h',
             marker_color=colors[::-1], marker_line_width=0,
-            text=[f"{v:+.1f}%" for v in vals[::-1]], textposition='outside',
+            text=[f"{v:+.2f}%" for v in vals[::-1]], textposition='outside', cliponaxis=False,
             textfont=dict(family=FONT_MONO, size=12, color='#1A1A1A'),
             hovertemplate='%{y}: %{x:.2f}%<extra></extra>'), row=r, col=c)
         fig.update_xaxes(showticklabels=False, showgrid=False, zeroline=True,
