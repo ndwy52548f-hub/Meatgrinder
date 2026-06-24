@@ -217,6 +217,74 @@ def _parse_text_grid(text):
     return series
 
 
+# ── Positional grid parser ────────────────────────────────────────────────────
+# Some decks label each grid only with a heading above it ("<Name> Monthly
+# Returns (Net)") and lay the numbers out under fixed month columns, with
+# partial first/last years. Text order alone can't tell which month a value
+# belongs to, so we align each value to a month column by its x-coordinate.
+
+def _group_words_into_lines(words, tol=3.0):
+    buckets = {}
+    for w in words:
+        buckets.setdefault(round(w['top'] / tol), []).append(w)
+    return [sorted(v, key=lambda x: x['x0']) for _, v in sorted(buckets.items())]
+
+
+def _parse_positional(page):
+    """Parse one page's label-less, column-aligned monthly grid via x-positions.
+    Returns {label: [(year, month, ret), ...]}."""
+    try:
+        lines = _group_words_into_lines(page.extract_words())
+    except Exception:
+        return {}
+
+    # header row: a line naming all twelve months as separate words
+    header_i, centers = None, None
+    for i, ln in enumerate(lines):
+        names = [w['text'].strip().lower()[:3] for w in ln]
+        if sum(1 for n in names if n in _MONTHS) >= 12:
+            cs = []
+            for w in ln:
+                key = w['text'].strip().lower()[:3]
+                if key in _MONTHS:
+                    cs.append(((w['x0'] + w['x1']) / 2, _MONTHS[key]))
+                elif w['text'].strip().upper() == 'YTD':
+                    cs.append(((w['x0'] + w['x1']) / 2, 'YTD'))
+            if len([c for c in cs if c[1] != 'YTD']) >= 12:
+                header_i, centers = i, cs
+                break
+    if header_i is None:
+        return {}
+
+    # label = heading above the grid that says "Monthly Returns"
+    label = ''
+    for ln in lines[:header_i]:
+        txt = ' '.join(w['text'] for w in ln)
+        if 'Monthly Returns' in txt:
+            label = txt.split('Monthly Returns')[0].strip()
+
+    cxs = [c[0] for c in centers]
+    clab = [c[1] for c in centers]
+    out = {}
+    for ln in lines[header_i + 1:]:
+        if not ln or not _YEAR_RE.fullmatch(ln[0]['text']):
+            continue
+        # only the label-less layout: token right after the year must be a value
+        if len(ln) < 2 or _token_value(ln[1]['text'])[0] is False:
+            continue
+        year = int(ln[0]['text'])
+        for w in ln[1:]:
+            ok, v = _token_value(w['text'])
+            if not ok or v is None:
+                continue
+            xc = (w['x0'] + w['x1']) / 2
+            j = min(range(len(cxs)), key=lambda k: abs(cxs[k] - xc))
+            if clab[j] == 'YTD':
+                continue
+            out.setdefault(label or 'Returns', []).append((year, clab[j], v))
+    return out
+
+
 def _cumulative_return(df):
     """Geometric cumulative return of a (year, month, ret%) frame."""
     return float((1 + df['ret'] / 100.0).prod() - 1)
@@ -288,6 +356,20 @@ def extract_return_series(file_like):
                         'n': len(df),
                         'page': pno,
                     })
+            # And the positional parser for label-less, column-aligned grids.
+            try:
+                pos = _parse_positional(page)
+            except Exception:
+                pos = {}
+            for label, recs in pos.items():
+                df = _dedupe(recs)
+                if len(df) >= 6:
+                    candidates.append({
+                        'label': label.strip()[:60] or 'Returns',
+                        'df': df,
+                        'n': len(df),
+                        'page': pno,
+                    })
 
     # merge candidates with the same label across pages (multi-page track records)
     merged = {}
@@ -311,7 +393,7 @@ def extract_return_series(file_like):
         chosen = min(pool, key=lambda c: _cumulative_return(c['df']))
         if n_before > 1:
             warnings.append(
-                f"{n_before} series found; ingested the lowest-return share class "
+                f"{n_before} return series found; ingested the lowest-return one "
                 f"(\"{chosen['label']}\") and discarded the rest.")
         candidates = [chosen]
 
