@@ -902,7 +902,6 @@ with tabs[15]:
 
 with tabs[0]:
     st.markdown('<div class="mg-sh" style="margin-top:14px;">Executive Summary</div>', unsafe_allow_html=True)
-    st.markdown('<div class="mg-note">An allocator\'s read of this track record, generated from the loaded returns and every metric in the tabs that follow.</div>', unsafe_allow_html=True)
     for _head, _body in build_exec_summary(fund_df, fund_name, MSCI_DF, 'MSCI World Hdg',
                                            AGG_DF, bm3_df, bm3_name,
                                            meta=st.session_state.get('deck_meta')):
@@ -1439,7 +1438,7 @@ with tabs[12]:
 
 with tabs[13]:
     st.markdown('<div class="mg-sh" style="margin-top:14px;">Due-Diligence Questionnaire</div>', unsafe_allow_html=True)
-    st.markdown('<div class="mg-note">Socratic questions to send the manager, grouped by category. Tags mark the six probing types: Clarify · Assumptions · Evidence · Perspective · Implications · Meta. Several are seeded from this track\'s own numbers.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="mg-note">Tags: Clarify · Assumptions · Evidence · Perspective · Implications · Meta</div>', unsafe_allow_html=True)
     _qno = 0
     for _ci, (_cat, _qs) in enumerate(build_ddq(fund_df, fund_name, MSCI_DF,
                                                  meta=st.session_state.get('deck_meta'))):
