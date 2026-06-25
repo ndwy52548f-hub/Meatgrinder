@@ -14,6 +14,7 @@ from analytics import (
     max_drawdown, calmar, skewness, excess_kurtosis, jarque_bera,
     compute_outliers, normality_tests, top_drawdowns, period_stats,
     seasonality, macro_events_table, piecewise_beta_regression,
+    build_exec_summary, build_ddq,
     acf, acf_conf_band, rolling_metrics, parse_uploaded_file,
     MSCI_DF, AGG_DF, HFRX_INDICES,
 )
@@ -833,9 +834,9 @@ st.markdown(f"""
 # ─── TABS ─────────────────────────────────────────────────────────────────────
 
 tabs = st.tabs([
-    "Summary", "Calendar", "Drawdowns", "Distribution",
+    "Exec Summary", "Summary", "Calendar", "Drawdowns", "Distribution",
     "Regression", "Co-Movement", "Waterfall", "Rolling", "Seasonality", "Multi-Period",
-    "Macro Events", "Shocks", "Data", "Input",
+    "Macro Events", "Shocks", "DDQ", "Data", "Input",
 ])
 
 
@@ -843,7 +844,7 @@ tabs = st.tabs([
 # TAB 10 — INPUT
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[13]:
+with tabs[15]:
     st.markdown('<div class="mg-sh">Input &amp; Parsing Diagnostics</div>', unsafe_allow_html=True)
     st.markdown(f"""
 <div class="mg-id">
@@ -880,7 +881,7 @@ with tabs[13]:
     # Outlier alert
     if n_out > 0 and outliers_df is not None:
         out_list = ' · '.join(
-            f"{MN[int(r.month)-1]} {int(r.year)} ({r.ret:+.1f}%)"
+            f"{MN[int(r.month)-1]} {int(r.year)} ({r.ret:+.2f}%)"
             for r in outliers_df.itertuples()
         )
         st.markdown(
@@ -891,10 +892,23 @@ with tabs[13]:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 0 — SUMMARY
+# TAB 0 — EXEC SUMMARY
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tabs[0]:
+    st.markdown('<div class="mg-sh" style="margin-top:14px;">Executive Summary</div>', unsafe_allow_html=True)
+    st.markdown('<div class="mg-note">An allocator\'s read of this track record, generated from the loaded returns and every metric in the tabs that follow.</div>', unsafe_allow_html=True)
+    for _head, _body in build_exec_summary(fund_df, fund_name, MSCI_DF, 'MSCI World Hdg',
+                                           AGG_DF, bm3_df, bm3_name):
+        st.markdown(f'<div class="mg-sh" style="margin-top:18px;">{_head}</div>', unsafe_allow_html=True)
+        st.markdown(_body, unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 1 — SUMMARY
+# ══════════════════════════════════════════════════════════════════════════════
+
+with tabs[1]:
     col_l, col_r = st.columns([1, 1], gap="large")
 
     full_rets = fund_df_raw['ret'].values
@@ -1013,7 +1027,7 @@ with tabs[0]:
 # TAB 1 — CALENDAR
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[1]:
+with tabs[2]:
     st.markdown('<div class="mg-sh">Monthly Return Track Record</div>', unsafe_allow_html=True)
 
     _MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -1076,7 +1090,7 @@ with tabs[1]:
 # TAB 2 — DRAWDOWNS
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[2]:
+with tabs[3]:
     st.markdown('<div class="mg-sh">Drawdown Series</div>', unsafe_allow_html=True)
     st.plotly_chart(chart_drawdowns(fund_df), use_container_width=True, config={'displayModeBar': False})
 
@@ -1118,9 +1132,9 @@ with tabs[2]:
             ('Peak',                   largest['peak_date'],     longest['peak_date'],     _avg_date([e['peak_date'] for e in episodes]),     _avg_date([e['peak_date'] for e in episodes], med=True)),
             ('Trough',                 largest['trough_date'],   longest['trough_date'],   _avg_date([e['trough_date'] for e in episodes]),   _avg_date([e['trough_date'] for e in episodes], med=True)),
             ('Recovery',               largest['recovery_date'], longest['recovery_date'], _avg_date([e['recovery_date'] for e in episodes]), _avg_date([e['recovery_date'] for e in episodes], med=True)),
-            ('Peak to Trough (mo)',    _dur(largest, 'peak_to_trough'),     _dur(longest, 'peak_to_trough'),     f"{np.mean(p2t):.1f}",                f"{np.median(p2t):.1f}"),
-            ('Trough to Recovery (mo)', _dur(largest, 'trough_to_recovery'), _dur(longest, 'trough_to_recovery'), (f"{np.mean(t2r):.1f}" if t2r else '—'), (f"{np.median(t2r):.1f}" if t2r else '—')),
-            ('Peak to Recovery (mo)',  _dur(largest, 'total_months'),       _dur(longest, 'total_months'),       (f"{np.mean(p2r):.1f}" if p2r else '—'), (f"{np.median(p2r):.1f}" if p2r else '—')),
+            ('Peak to Trough (mo)',    _dur(largest, 'peak_to_trough'),     _dur(longest, 'peak_to_trough'),     f"{np.mean(p2t):.2f}",                f"{np.median(p2t):.2f}"),
+            ('Trough to Recovery (mo)', _dur(largest, 'trough_to_recovery'), _dur(longest, 'trough_to_recovery'), (f"{np.mean(t2r):.2f}" if t2r else '—'), (f"{np.median(t2r):.2f}" if t2r else '—')),
+            ('Peak to Recovery (mo)',  _dur(largest, 'total_months'),       _dur(longest, 'total_months'),       (f"{np.mean(p2r):.2f}" if p2r else '—'), (f"{np.median(p2r):.2f}" if p2r else '—')),
         ]
         da_html = ('<div style="max-width:640px;"><table class="mg-tbl"><thead><tr>'
                    '<th></th><th>Largest</th><th>Longest</th><th>Mean</th><th>Median</th>'
@@ -1148,7 +1162,7 @@ with tabs[2]:
 # TAB 3 — DISTRIBUTION
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[3]:
+with tabs[4]:
     c_h, c_q = st.columns([3, 2], gap="large")
     with c_h:
         st.markdown('<div class="mg-sh">Return Distribution</div>', unsafe_allow_html=True)
@@ -1182,7 +1196,7 @@ with tabs[3]:
 # TAB 4 — REGRESSION
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[4]:
+with tabs[5]:
     from scipy.stats import t as _t
 
     def _reg_pval(t_stat, nn):
@@ -1241,7 +1255,7 @@ with tabs[4]:
 # TAB 5 — CO-MOVEMENT
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[5]:
+with tabs[6]:
     st.markdown('<div class="mg-sh" style="margin-top:14px;">Co-Movement in Market Extremes</div>', unsafe_allow_html=True)
     c_bw_l, c_bw_r = st.columns(2, gap="large")
     with c_bw_l:
@@ -1263,7 +1277,7 @@ with tabs[5]:
 # TAB 6 — WATERFALL
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[6]:
+with tabs[7]:
     st.markdown('<div class="mg-sh" style="margin-top:14px;">Strategy vs Market Waterfall</div>', unsafe_allow_html=True)
     st.markdown('<div class="mg-note">Every overlapping month sorted by market return, best (left) to worst (right). Bottom: MSCI World Hedged, shaded by its own return. Top: the fund over the same ordering — blue when positive, orange/red when negative. Hover any bar for the month.</div>', unsafe_allow_html=True)
     st.plotly_chart(
@@ -1275,7 +1289,7 @@ with tabs[6]:
 # TAB 7 — ROLLING
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[7]:
+with tabs[8]:
     if len(fund_df) < 12:
         st.warning("Need at least 12 months of data for rolling metrics.")
     else:
@@ -1294,7 +1308,7 @@ with tabs[7]:
 # TAB 6 — SEASONALITY
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[8]:
+with tabs[9]:
     seas = seasonality(fund_df)
     c_sm, c_sq = st.columns(2, gap="large")
     with c_sm:
@@ -1311,7 +1325,7 @@ with tabs[8]:
         sub   = fund_df[fund_df['month'] == m_idx]['ret']
         hit   = int(np.sum(sub > 0)) / len(sub) * 100 if len(sub) > 0 else 0
         cls   = 'pos' if row['mean'] >= 0 else 'neg'
-        s_html += f"<tr><td class='lbl'>{MN[m_idx-1]}</td><td class='{cls}'>{row['mean']:.2f}%</td><td>{row['std']:.2f}%</td><td>{int(row['count'])}</td><td>{hit:.0f}%</td></tr>"
+        s_html += f"<tr><td class='lbl'>{MN[m_idx-1]}</td><td class='{cls}'>{row['mean']:.2f}%</td><td>{row['std']:.2f}%</td><td>{int(row['count'])}</td><td>{hit:.2f}%</td></tr>"
     s_html += '</tbody></table>'
     st.markdown(s_html, unsafe_allow_html=True)
 
@@ -1320,7 +1334,7 @@ with tabs[8]:
 # TAB 7 — MULTI-PERIOD
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[9]:
+with tabs[10]:
     last_year  = int(fund_df.iloc[-1]['year'])
     last_month = int(fund_df.iloc[-1]['month'])
 
@@ -1379,7 +1393,7 @@ with tabs[9]:
 # TAB 8 — MACRO EVENTS
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[10]:
+with tabs[11]:
     ev_rows = macro_events_table(fund_df, bm1_df)
     if not ev_rows:
         st.info("No macro event periods overlap with this fund's history.")
@@ -1404,7 +1418,7 @@ with tabs[10]:
 # TAB 11 — SHOCKS
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[11]:
+with tabs[12]:
     st.markdown('<div class="mg-sh" style="margin-top:14px;">Performance During Discrete Shock Events</div>', unsafe_allow_html=True)
     st.markdown('<div class="mg-note">The four events with the largest Strategy-vs-market return differential. Each panel shows the compound return of every series over that window — blue when positive, orange/red when negative.</div>', unsafe_allow_html=True)
     st.plotly_chart(
@@ -1414,10 +1428,29 @@ with tabs[11]:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 12 — DATA
+# TAB 13 — DDQ
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[12]:
+with tabs[13]:
+    st.markdown('<div class="mg-sh" style="margin-top:14px;">Due-Diligence Questionnaire</div>', unsafe_allow_html=True)
+    st.markdown('<div class="mg-note">Socratic questions to send the manager, grouped by category. Tags mark the six probing types: Clarify · Assumptions · Evidence · Perspective · Implications · Meta. Several are seeded from this track\'s own numbers.</div>', unsafe_allow_html=True)
+    _qno = 0
+    for _cat, _qs in build_ddq(fund_df, fund_name, MSCI_DF):
+        st.markdown(f'<div class="mg-sh" style="margin-top:18px;">{_cat}</div>', unsafe_allow_html=True)
+        _rows = ''
+        for _q, _ty in _qs:
+            _qno += 1
+            _rows += (f'<div style="color:#1A1A1A;font-size:15px;line-height:1.6;margin:0 0 8px 0;">'
+                      f'<span style="color:#006B7A;font-weight:700;">{_qno}.</span> {_q} '
+                      f'<span style="color:#006B7A;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">[{_ty}]</span></div>')
+        st.markdown(_rows, unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 14 — DATA
+# ══════════════════════════════════════════════════════════════════════════════
+
+with tabs[14]:
     _, c_s = st.columns([3, 1])
     with c_s:
         search = st.text_input("Filter rows", placeholder="e.g. 2020 or Mar")

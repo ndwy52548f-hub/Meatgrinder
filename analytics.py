@@ -917,3 +917,201 @@ def parse_uploaded_file(uploaded_file):
         ), diag
 
     return golden, '', diag
+
+
+# ─── EXEC SUMMARY & DDQ ───────────────────────────────────────────────────────
+# Allocator-voice synthesis and a Socratic due-diligence questionnaire, both
+# generated from the loaded return stream and its computed analytics.
+
+MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+
+def _exec_metrics(fund_df, mkt_df):
+    r = fund_df['ret'].values.astype(float)
+    n = len(r)
+    m = {'n': n}
+    if n == 0:
+        return m
+    fd = fund_df.reset_index(drop=True)
+    m['y0'], m['m0'] = int(fd.iloc[0]['year']), int(fd.iloc[0]['month'])
+    m['y1'], m['m1'] = int(fd.iloc[-1]['year']), int(fd.iloc[-1]['month'])
+    m['years'] = n / 12.0
+    m['ann'] = geo_return(r); m['vol'] = ann_vol(r)
+    m['sharpe'] = sharpe_with_rf(fund_df); m['sortino'] = sortino_with_rf(fund_df)
+    m['mdd'] = max_drawdown(r); m['calmar'] = calmar(r)
+    bi, wi = int(np.argmax(r)), int(np.argmin(r))
+    m['best'] = float(r[bi]); m['worst'] = float(r[wi])
+    m['best_m'] = f"{MN[int(fd.iloc[bi]['month'])-1]} {int(fd.iloc[bi]['year'])}"
+    m['worst_m'] = f"{MN[int(fd.iloc[wi]['month'])-1]} {int(fd.iloc[wi]['year'])}"
+    m['hit'] = float((r > 0).mean() * 100)
+    m['skew'] = skewness(r); m['kurt'] = excess_kurtosis(r)
+    _, m['jb_p'] = jarque_bera(r)
+    m['lag1'] = acf(r, 1)[0] if n > 3 else 0.0
+    m['reg'] = piecewise_beta_regression(fund_df, mkt_df)
+    m['dd'] = top_drawdowns(fund_df, 3)
+    m['macro'] = macro_events_table(fund_df, mkt_df)
+    return m
+
+
+def build_exec_summary(fund_df, fund_name, mkt_df, mkt_name,
+                       agg_df=None, bm3_df=None, bm3_name=''):
+    """Return a list of (subhead, html_body) blocks — an allocator's review."""
+    m = _exec_metrics(fund_df, mkt_df)
+    if m['n'] == 0:
+        return [("Executive Summary", "<p style='color:#1A1A1A'>No return data is loaded.</p>")]
+
+    def P(*sentences):
+        return ("<p style='color:#1A1A1A;font-size:15px;line-height:1.6;margin:0 0 10px 0;'>"
+                + " ".join(sentences) + "</p>")
+
+    span = f"{MN[m['m0']-1]} {m['y0']} \u2013 {MN[m['m1']-1]} {m['y1']}"
+    blocks = []
+
+    # 1 — Snapshot
+    blocks.append(("Snapshot", P(
+        f"The record under review spans {span} ({m['n']} monthly observations, ~{m['years']:.1f} years).",
+        f"Over that window the strategy compounded at {m['ann']:.2f}% annualized with {m['vol']:.2f}% annualized volatility,",
+        f"producing a Sharpe of {m['sharpe']:.2f} and a Sortino of {m['sortino']:.2f} (risk-free = 3M T-bills).",
+        f"{m['hit']:.2f}% of months were positive.")))
+
+    # 2 — Drawdowns
+    dd_txt = [f"The deepest peak-to-trough drawdown was {m['mdd']:.2f}%, giving a Calmar ratio of {m['calmar']:.2f}."]
+    if m['dd']:
+        d0 = m['dd'][0]
+        rec = d0.get('recovery_date') or d0.get('recovery') or 'not yet recovered'
+        dd_txt.append(f"The worst episode ran from {d0['peak_date']} to a trough in {d0['trough_date']} ({d0['drawdown']:.2f}%), recovering by {rec}.")
+    dd_txt.append("An allocator should size any position against the prospect of repeating that drawdown, not the headline return.")
+    blocks.append(("Risk & Drawdowns", P(*dd_txt)))
+
+    # 3 — Market sensitivity
+    reg = m['reg']
+    if reg:
+        cap = []
+        cap.append(f"Against {mkt_name}, beta is {reg['beta']:.2f} with a monthly alpha of {reg['alpha']:.2f}% (R\u00b2 = {reg['r2']:.2f}, correlation {reg['corr']:.2f}).")
+        if reg.get('beta_up') is not None and reg.get('beta_dn') is not None:
+            updn = "more in up-markets than it gives back in down-markets" if reg['beta_up'] > reg['beta_dn'] else "less in up-markets than it loses in down-markets"
+            cap.append(f"Up-market beta is {reg['beta_up']:.2f} versus {reg['beta_dn']:.2f} in down-markets \u2014 it captures {updn}.")
+        cap.append("The question is whether that alpha is a durable edge or compensation for a risk not visible in this monthly series.")
+        blocks.append(("Market Sensitivity", P(*cap)))
+
+    # 4 — Tail & distribution
+    skew_txt = "a left tail (downside surprises larger than upside)" if m['skew'] < 0 else "a right tail (upside surprises larger than downside)"
+    fat = "fat-tailed relative to a normal distribution" if m['kurt'] > 0.5 else "close to normal in its tails"
+    norm = "rejects normality" if m['jb_p'] < 0.05 else "does not reject normality"
+    blocks.append(("Tail Behaviour", P(
+        f"Monthly returns show skew of {m['skew']:.2f} ({skew_txt}) and excess kurtosis of {m['kurt']:.2f} ({fat}).",
+        f"The Jarque-Bera test {norm} at the 5% level.",
+        f"The best and worst months were {m['best']:.2f}% ({m['best_m']}) and {m['worst']:.2f}% ({m['worst_m']}); confirm neither was a single position or a one-off mark.")))
+
+    # 5 — Smoothing flag
+    if m['lag1'] >= 0.2:
+        smooth = (f"First-order autocorrelation is {m['lag1']:.2f}, which is elevated. "
+                  "Persistent positive autocorrelation can indicate illiquid or stale-priced holdings whose marks lag, "
+                  "flattering reported volatility and Sharpe. This warrants direct questions on valuation and liquidity.")
+    else:
+        smooth = (f"First-order autocorrelation is {m['lag1']:.2f}, low enough that return smoothing from stale marks is unlikely to be materially distorting the risk statistics.")
+    blocks.append(("Return Smoothing", P(smooth)))
+
+    # 6 — Crisis behaviour
+    if m['macro']:
+        prot = [e for e in m['macro'] if e.get('spread') is not None and e['spread'] > 0]
+        worst_ev = min((e for e in m['macro'] if e.get('fund_ret') is not None), key=lambda e: e['fund_ret'], default=None)
+        ctxt = [f"Across the {len(m['macro'])} stress windows that overlap this track, the strategy outperformed {mkt_name} in {len(prot)} of them."]
+        if worst_ev:
+            ctxt.append(f"Its hardest event was {worst_ev['name']} ({worst_ev['period']}) at {worst_ev['fund_ret']:.2f}%.")
+        ctxt.append("Crisis behaviour, not full-cycle averages, is where capital is preserved or lost.")
+        blocks.append(("Crisis Behaviour", P(*ctxt)))
+
+    # 7 — Bottom line
+    verdict = []
+    if m['sharpe'] >= 1.0 and m['mdd'] > -25:
+        verdict.append("On the numbers alone the risk-adjusted profile is attractive.")
+    elif m['sharpe'] >= 0.5:
+        verdict.append("On the numbers the risk-adjusted profile is reasonable but not exceptional.")
+    else:
+        verdict.append("On the numbers the risk-adjusted profile is modest and the return appears largely market-driven.")
+    verdict.append("Before allocating, the track record's length, the source of alpha, the valuation of any illiquid book, "
+                   "and the firm's people and operations all need to be tested directly \u2014 see the DDQ tab. "
+                   "Past performance computed from a monthly series cannot, by itself, support a commitment.")
+    blocks.append(("Allocator's Bottom Line", P(*verdict)))
+    return blocks
+
+
+def build_ddq(fund_df, fund_name, mkt_df):
+    """Return [(category, [(question, socratic_type), ...]), ...]. Socratic types:
+    Clarify, Assumptions, Evidence, Perspective, Implications, Meta."""
+    m = _exec_metrics(fund_df, mkt_df)
+    worst_m = m.get('worst_m', 'the worst month'); worst = m.get('worst', 0.0)
+    best_m = m.get('best_m', 'the best month'); best = m.get('best', 0.0)
+    mdd = m.get('mdd', 0.0); lag1 = m.get('lag1', 0.0)
+    reg = m.get('reg') or {}
+    beta = reg.get('beta')
+
+    cats = []
+
+    cats.append(("A. Investment Thesis & Edge", [
+        ("In your own words, what specific market inefficiency does the strategy exploit, and why does it persist?", "Clarify"),
+        ("What must be true about market structure or participant behaviour for that edge to keep working?", "Assumptions"),
+        ("What evidence, beyond returns, would convince a skeptic the edge is real rather than a factor exposure?", "Evidence"),
+        ("How would a competitor running the opposite view describe what you do, and where might they be right?", "Perspective"),
+        ("If your primary edge were arbitraged away tomorrow, what in the process would still generate return?", "Implications"),
+    ]))
+
+    cats.append(("B. Performance & Attribution", [
+        (f"Walk us through {best_m}, the best month at {best:.2f}% \u2014 what drove it, and was it repeatable or idiosyncratic?", "Clarify"),
+        (f"In {worst_m} the strategy returned {worst:.2f}%; what was the proximate cause and what changed afterward?", "Evidence"),
+        ("What portion of lifetime return is attributable to a handful of positions, and what does that imply about breadth?", "Implications"),
+        ("Which assumptions in your attribution would most change the story if they were wrong?", "Assumptions"),
+        ("How do you distinguish skill from beta in your own reporting, and would an independent reviewer agree?", "Perspective"),
+    ]))
+
+    risk_q = [
+        (f"The deepest drawdown in this record is {mdd:.2f}%; what was your peak gross and net exposure into and through it?", "Clarify"),
+        ("What are the explicit, pre-committed rules that force de-risking, and when were they last triggered?", "Evidence"),
+        ("What scenario keeps you up at night that your current risk limits would not catch?", "Assumptions"),
+        ("If a position gapped against you overnight at 3x your VaR, what exactly happens next, step by step?", "Implications"),
+    ]
+    if beta is not None:
+        risk_q.append((f"Realized beta to the market is {beta:.2f}; how much of your return survives if you hedge that beta out?", "Perspective"))
+    cats.append(("C. Risk Management & Drawdowns", risk_q))
+
+    cats.append(("D. Portfolio Construction, Liquidity & Capacity", [
+        ("How many days to liquidate the book at 20% of ADV without moving prices, in both calm and stressed markets?", "Clarify"),
+        ("What is the strategy's honest capacity, and what evidence from your own trading supports that number?", "Evidence"),
+        ("What assumption about market liquidity is embedded in your position sizing, and when has it failed?", "Assumptions"),
+        ("If assets doubled, which part of the process degrades first?", "Implications"),
+    ]))
+
+    smooth_note = (f"first-order autocorrelation of monthly returns is {lag1:.2f}"
+                   + (" \u2014 elevated, which can signal stale marks" if lag1 >= 0.2 else ""))
+    cats.append(("E. Valuation, Marks & Return Smoothing", [
+        (f"Our analysis shows {smooth_note}; how are hard-to-value positions priced, and by whom?", "Evidence"),
+        ("Who independently verifies marks, how often, and what happens when their price disagrees with yours?", "Clarify"),
+        ("What assumptions underlie your fair-value process for the least liquid 10% of the book?", "Assumptions"),
+        ("If a third party re-priced the portfolio at quarter-end, where would the largest differences appear, and why?", "Implications"),
+    ]))
+
+    cats.append(("F. Organization, Team & Key-Person Succession", [
+        ("Who are the decision-makers, and which single departure would most damage the franchise?", "Clarify"),
+        ("What is the written succession plan for the CIO and other key persons, and who has seen it?", "Evidence"),
+        ("What assumptions about staff retention underpin your continuity \u2014 vesting, equity, non-competes?", "Assumptions"),
+        ("From a departing partner's perspective, what would make them leave, and how is that risk mitigated?", "Perspective"),
+        ("If the founder were unavailable for six months, what concretely changes in how capital is managed?", "Implications"),
+    ]))
+
+    cats.append(("G. Operations, Counterparties & Disaster Recovery", [
+        ("Who are your prime brokers, administrator and auditor, and when did each last change?", "Clarify"),
+        ("Describe your business-continuity and disaster-recovery plan \u2014 when was it last tested, and what failed?", "Evidence"),
+        ("What assumptions does your operational setup make about counterparty solvency and access to financing?", "Assumptions"),
+        ("If your primary prime broker failed on a Friday, what is the state of the portfolio on Monday?", "Implications"),
+        ("Where is the line between investment risk and operational risk in your own org chart, and who owns each?", "Meta"),
+    ]))
+
+    cats.append(("H. Compliance, Alignment & Terms", [
+        ("How much of the principals' liquid net worth is invested alongside LPs, and on the same terms?", "Clarify"),
+        ("What conflicts of interest exist across vehicles or share classes, and how are they disclosed and managed?", "Evidence"),
+        ("What assumptions about fee and liquidity terms are baked into your reported net returns for this class?", "Assumptions"),
+        ("Are we asking the right questions to understand this strategy, or is there a question we should be asking that we are not?", "Meta"),
+    ]))
+    return cats
