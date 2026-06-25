@@ -945,6 +945,11 @@ def _exec_metrics(fund_df, mkt_df):
     m['best_m'] = f"{MN[int(fd.iloc[bi]['month'])-1]} {int(fd.iloc[bi]['year'])}"
     m['worst_m'] = f"{MN[int(fd.iloc[wi]['month'])-1]} {int(fd.iloc[wi]['year'])}"
     m['hit'] = float((r > 0).mean() * 100)
+    pos, neg = r[r > 0], r[r < 0]
+    m['avg_up'] = float(pos.mean()) if len(pos) else 0.0
+    m['avg_down'] = float(neg.mean()) if len(neg) else 0.0
+    m['std'] = float(r.std(ddof=1)) if n > 1 else 0.0
+    m['worst_sigma'] = abs(m['worst']) / m['std'] if m['std'] else 0.0
     m['skew'] = skewness(r); m['kurt'] = excess_kurtosis(r)
     _, m['jb_p'] = jarque_bera(r)
     m['lag1'] = acf(r, 1)[0] if n > 3 else 0.0
@@ -968,86 +973,86 @@ def build_exec_summary(fund_df, fund_name, mkt_df, mkt_name,
     span = f"{MN[m['m0']-1]} {m['y0']} \u2013 {MN[m['m1']-1]} {m['y1']}"
     blocks = []
     meta = meta or {}
+    reg = m['reg'] or {}
+    r2pct = reg.get('r2', 0) * 100
 
-    # 1 — Snapshot
-    snap = [
-        f"The record under review spans {span} ({m['n']} monthly observations, ~{m['years']:.1f} years).",
-        f"Over that window the strategy compounded at {m['ann']:.2f}% annualized with {m['vol']:.2f}% annualized volatility,",
-        f"producing a Sharpe of {m['sharpe']:.2f} and a Sortino of {m['sortino']:.2f} (risk-free = 3M T-bills).",
-        f"{m['hit']:.2f}% of months were positive.",
-    ]
-    deck_bits = []
+    # Lead assessment — synthesise the two or three most material, factual points.
+    lead = []
     if meta.get('strategy_type'):
-        deck_bits.append(f"a {', '.join(meta['strategy_type'][:2])} strategy")
-    if meta.get('portfolio_manager'):
-        deck_bits.append(f"run by {meta['portfolio_manager']}")
-    firm_aum = next((a for a in meta.get('aum', []) if 'firm' in a.lower()), None)
-    if firm_aum:
-        deck_bits.append(f"at a firm reporting {firm_aum}")
-    if deck_bits:
-        snap.append("Per the deck, this is " + " ".join(deck_bits) + ".")
-    blocks.append(("Snapshot", P(*snap)))
+        types = ', '.join(meta['strategy_type'][:2])
+        article = 'an' if types[:1].lower() in 'aeiou' else 'a'
+        subject = f"{article} {types} track"
+    else:
+        subject = "the track"
+    pm = f", managed by {meta['portfolio_manager']}," if meta.get('portfolio_manager') else ""
+    lead.append(f"Over {span} ({m['n']} months, ~{m['years']:.1f} years), {subject}{pm} "
+                f"compounded at {m['ann']:.2f}% annualized against {m['vol']:.2f}% volatility \u2014 "
+                f"a Sharpe of {m['sharpe']:.2f} and Sortino of {m['sortino']:.2f}.")
+    if reg:
+        idio = 100 - r2pct
+        lead.append(f"The market ({mkt_name}) explains {r2pct:.0f}% of monthly variance, leaving {idio:.0f}% idiosyncratic at a beta of {reg['beta']:.2f}.")
+    if m['avg_up'] and m['avg_down']:
+        ratio = abs(m['avg_up'] / m['avg_down']) if m['avg_down'] else 0
+        lead.append(f"The average up month (+{m['avg_up']:.2f}%) is {ratio:.2f}x the average down month ({m['avg_down']:.2f}%), and the deepest drawdown was {m['mdd']:.2f}%.")
+    blocks.append(("Assessment", P(*lead)))
 
-    # 2 — Drawdowns
-    dd_txt = [f"The deepest peak-to-trough drawdown was {m['mdd']:.2f}%, giving a Calmar ratio of {m['calmar']:.2f}."]
+    # Return & risk
+    rr = [
+        f"{m['hit']:.2f}% of months were positive.",
+        f"The average up month returned +{m['avg_up']:.2f}% against {m['avg_down']:.2f}% in down months.",
+        f"The single worst month, {m['worst']:.2f}% in {m['worst_m']}, was {m['worst_sigma']:.2f} standard deviations \u2014 larger tail events than a normal distribution at this volatility would produce." if m['worst_sigma'] >= 3 else
+        f"The best and worst months were +{m['best']:.2f}% ({m['best_m']}) and {m['worst']:.2f}% ({m['worst_m']}).",
+    ]
+    blocks.append(("Return & Risk", P(*rr)))
+
+    # Drawdowns
+    dd_txt = [f"The deepest peak-to-trough drawdown was {m['mdd']:.2f}%, a Calmar of {m['calmar']:.2f} against the {m['ann']:.2f}% annualized return."]
     if m['dd']:
         d0 = m['dd'][0]
-        rec = d0.get('recovery_date') or d0.get('recovery') or 'not yet recovered'
-        dd_txt.append(f"The worst episode ran from {d0['peak_date']} to a trough in {d0['trough_date']} ({d0['drawdown']:.2f}%), recovering by {rec}.")
-    dd_txt.append("An allocator should size any position against the prospect of repeating that drawdown, not the headline return.")
-    blocks.append(("Risk & Drawdowns", P(*dd_txt)))
+        if d0.get('recovery_date') and d0['recovery_date'] not in ('Ongoing', None):
+            rec = (f"and recovered by {d0['recovery_date']}, "
+                   f"{d0['peak_to_trough']} months down and {d0['trough_to_recovery']} months to recover")
+        else:
+            rec = "and has not yet recovered to the prior peak"
+        dd_txt.append(f"It ran from {d0['peak_date']} to a trough in {d0['trough_date']} ({d0['drawdown']:.2f}%) {rec}.")
+    blocks.append(("Drawdowns", P(*dd_txt)))
 
-    # 3 — Market sensitivity
-    reg = m['reg']
+    # Market sensitivity
     if reg:
-        cap = []
-        cap.append(f"Against {mkt_name}, beta is {reg['beta']:.2f} with a monthly alpha of {reg['alpha']:.2f}% (R\u00b2 = {reg['r2']:.2f}, correlation {reg['corr']:.2f}).")
+        cap = [f"Beta to {mkt_name} is {reg['beta']:.2f} with monthly alpha of {reg['alpha']:.2f}% (R\u00b2 {reg['r2']:.2f}, correlation {reg['corr']:.2f})."]
         if reg.get('beta_up') is not None and reg.get('beta_dn') is not None:
-            updn = "more in up-markets than it gives back in down-markets" if reg['beta_up'] > reg['beta_dn'] else "less in up-markets than it loses in down-markets"
-            cap.append(f"Up-market beta is {reg['beta_up']:.2f} versus {reg['beta_dn']:.2f} in down-markets \u2014 it captures {updn}.")
-        cap.append("The question is whether that alpha is a durable edge or compensation for a risk not visible in this monthly series.")
+            if reg['beta_up'] > reg['beta_dn']:
+                cap.append(f"Up-market beta ({reg['beta_up']:.2f}) exceeds down-market beta ({reg['beta_dn']:.2f}): historically it participated more in rising markets than falling ones.")
+            else:
+                cap.append(f"Down-market beta ({reg['beta_dn']:.2f}) exceeds up-market beta ({reg['beta_up']:.2f}): historically it fell more with the market than it rose with it.")
         blocks.append(("Market Sensitivity", P(*cap)))
 
-    # 4 — Tail & distribution
-    skew_txt = "a left tail (downside surprises larger than upside)" if m['skew'] < 0 else "a right tail (upside surprises larger than downside)"
-    fat = "fat-tailed relative to a normal distribution" if m['kurt'] > 0.5 else "close to normal in its tails"
+    # Distribution & tails
+    skew_txt = "negative skew (losses in the tail outweigh gains)" if m['skew'] < 0 else "positive skew (gains in the tail outweigh losses)"
+    fat = "fatter tails than a normal distribution" if m['kurt'] > 0.5 else "tails close to normal"
     norm = "rejects normality" if m['jb_p'] < 0.05 else "does not reject normality"
-    blocks.append(("Tail Behaviour", P(
-        f"Monthly returns show skew of {m['skew']:.2f} ({skew_txt}) and excess kurtosis of {m['kurt']:.2f} ({fat}).",
-        f"The Jarque-Bera test {norm} at the 5% level.",
-        f"The best and worst months were {m['best']:.2f}% ({m['best_m']}) and {m['worst']:.2f}% ({m['worst_m']}); confirm neither was a single position or a one-off mark.")))
+    blocks.append(("Distribution & Tails", P(
+        f"Returns show {skew_txt} (skew {m['skew']:.2f}) and excess kurtosis of {m['kurt']:.2f} \u2014 {fat}.",
+        f"Jarque-Bera {norm} at the 5% level.")))
 
-    # 5 — Smoothing flag
+    # Return smoothing — factual only
     if m['lag1'] >= 0.2:
-        smooth = (f"First-order autocorrelation is {m['lag1']:.2f}, which is elevated. "
-                  "Persistent positive autocorrelation can indicate illiquid or stale-priced holdings whose marks lag, "
-                  "flattering reported volatility and Sharpe. This warrants direct questions on valuation and liquidity.")
-    else:
-        smooth = (f"First-order autocorrelation is {m['lag1']:.2f}, low enough that return smoothing from stale marks is unlikely to be materially distorting the risk statistics.")
-    blocks.append(("Return Smoothing", P(smooth)))
+        smooth = (f"Lag-1 autocorrelation is {m['lag1']:.2f}. Positive serial correlation at this level mechanically lowers "
+                  f"reported volatility and raises the Sharpe relative to the true, unsmoothed series.")
+        blocks.append(("Return Smoothing", P(smooth)))
+    elif m['lag1'] <= -0.2:
+        blocks.append(("Return Smoothing", P(
+            f"Lag-1 autocorrelation is {m['lag1']:.2f}, a negative serial correlation (returns tend to reverse month to month).")))
 
-    # 6 — Crisis behaviour
+    # Crisis behaviour
     if m['macro']:
         prot = [e for e in m['macro'] if e.get('spread') is not None and e['spread'] > 0]
         worst_ev = min((e for e in m['macro'] if e.get('fund_ret') is not None), key=lambda e: e['fund_ret'], default=None)
-        ctxt = [f"Across the {len(m['macro'])} stress windows that overlap this track, the strategy outperformed {mkt_name} in {len(prot)} of them."]
+        ctxt = [f"Across {len(m['macro'])} historical stress windows in the record, the strategy outperformed {mkt_name} in {len(prot)}."]
         if worst_ev:
-            ctxt.append(f"Its hardest event was {worst_ev['name']} ({worst_ev['period']}) at {worst_ev['fund_ret']:.2f}%.")
-        ctxt.append("Crisis behaviour, not full-cycle averages, is where capital is preserved or lost.")
+            ctxt.append(f"Its weakest was {worst_ev['name']} ({worst_ev['period']}) at {worst_ev['fund_ret']:.2f}%.")
         blocks.append(("Crisis Behaviour", P(*ctxt)))
 
-    # 7 — Bottom line
-    verdict = []
-    if m['sharpe'] >= 1.0 and m['mdd'] > -25:
-        verdict.append("On the numbers alone the risk-adjusted profile is attractive.")
-    elif m['sharpe'] >= 0.5:
-        verdict.append("On the numbers the risk-adjusted profile is reasonable but not exceptional.")
-    else:
-        verdict.append("On the numbers the risk-adjusted profile is modest and the return appears largely market-driven.")
-    verdict.append("Before allocating, the track record's length, the source of alpha, the valuation of any illiquid book, "
-                   "and the firm's people and operations all need to be tested directly \u2014 see the DDQ tab. "
-                   "Past performance computed from a monthly series cannot, by itself, support a commitment.")
-    blocks.append(("Allocator's Bottom Line", P(*verdict)))
     return blocks
 
 

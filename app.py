@@ -901,7 +901,6 @@ with tabs[15]:
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tabs[0]:
-    st.markdown('<div class="mg-sh" style="margin-top:14px;">Executive Summary</div>', unsafe_allow_html=True)
     for _head, _body in build_exec_summary(fund_df, fund_name, MSCI_DF, 'MSCI World Hdg',
                                            AGG_DF, bm3_df, bm3_name,
                                            meta=st.session_state.get('deck_meta')):
