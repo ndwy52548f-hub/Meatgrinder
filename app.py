@@ -521,6 +521,7 @@ for k, v in {
     'outliers_df': None, 'trimmed': False,
     'parse_diag': None, 'bm_choice': 'MSCI World Hedged USD',
     'pdf_candidates': None, 'pdf_warns': None, 'pdf_sig': None,
+    'pdf_meta': None, 'deck_meta': {},
     'hfrx_choice': None,
 }.items():
     if k not in st.session_state:
@@ -533,9 +534,10 @@ def _load_pdf_file(up):
     """Extract candidate return series from a PDF, cached by file signature."""
     sig = f"{up.name}:{getattr(up, 'size', 0)}"
     if st.session_state.get('pdf_sig') != sig:
-        cands, warns = extract_return_series(up)
+        cands, warns, meta = extract_return_series(up)
         st.session_state['pdf_candidates'] = cands
         st.session_state['pdf_warns'] = warns
+        st.session_state['pdf_meta'] = meta
         st.session_state['pdf_sig'] = sig
         st.session_state['pdf_name_default'] = _name_from_file(up.name)
 
@@ -593,6 +595,7 @@ def _render_pdf_picker():
                     'fund_df': df,
                     'outliers_df': compute_outliers(df),
                     'fund_name': name,
+                    'deck_meta': st.session_state.get('pdf_meta') or {},
                     'parse_diag': {
                         'date_col': 'PDF deck', 'date_format': 'year \u00d7 month grid',
                         'ret_col': 'PDF deck', 'ret_format': 'percent',
@@ -678,6 +681,7 @@ if st.session_state['fund_df'] is None:
                     'outliers_df': compute_outliers(df),
                     'parse_diag': diag,
                     'fund_name': _name_from_file(up.name),
+                    'deck_meta': {},
                 })
                 st.rerun()
 
@@ -712,6 +716,7 @@ with c_up:
                     'outliers_df': compute_outliers(df2),
                     'parse_diag': diag2,
                     'fund_name': _name_from_file(new_up.name),
+                    'deck_meta': {},
                 })
                 st.rerun()
 
@@ -899,7 +904,8 @@ with tabs[0]:
     st.markdown('<div class="mg-sh" style="margin-top:14px;">Executive Summary</div>', unsafe_allow_html=True)
     st.markdown('<div class="mg-note">An allocator\'s read of this track record, generated from the loaded returns and every metric in the tabs that follow.</div>', unsafe_allow_html=True)
     for _head, _body in build_exec_summary(fund_df, fund_name, MSCI_DF, 'MSCI World Hdg',
-                                           AGG_DF, bm3_df, bm3_name):
+                                           AGG_DF, bm3_df, bm3_name,
+                                           meta=st.session_state.get('deck_meta')):
         st.markdown(f'<div class="mg-sh" style="margin-top:18px;">{_head}</div>', unsafe_allow_html=True)
         st.markdown(_body, unsafe_allow_html=True)
 
@@ -1435,8 +1441,10 @@ with tabs[13]:
     st.markdown('<div class="mg-sh" style="margin-top:14px;">Due-Diligence Questionnaire</div>', unsafe_allow_html=True)
     st.markdown('<div class="mg-note">Socratic questions to send the manager, grouped by category. Tags mark the six probing types: Clarify · Assumptions · Evidence · Perspective · Implications · Meta. Several are seeded from this track\'s own numbers.</div>', unsafe_allow_html=True)
     _qno = 0
-    for _cat, _qs in build_ddq(fund_df, fund_name, MSCI_DF):
-        st.markdown(f'<div class="mg-sh" style="margin-top:18px;">{_cat}</div>', unsafe_allow_html=True)
+    for _ci, (_cat, _qs) in enumerate(build_ddq(fund_df, fund_name, MSCI_DF,
+                                                 meta=st.session_state.get('deck_meta'))):
+        _letter = chr(65 + _ci)
+        st.markdown(f'<div class="mg-sh" style="margin-top:18px;">{_letter}. {_cat}</div>', unsafe_allow_html=True)
         _rows = ''
         for _q, _ty in _qs:
             _qno += 1

@@ -955,7 +955,7 @@ def _exec_metrics(fund_df, mkt_df):
 
 
 def build_exec_summary(fund_df, fund_name, mkt_df, mkt_name,
-                       agg_df=None, bm3_df=None, bm3_name=''):
+                       agg_df=None, bm3_df=None, bm3_name='', meta=None):
     """Return a list of (subhead, html_body) blocks — an allocator's review."""
     m = _exec_metrics(fund_df, mkt_df)
     if m['n'] == 0:
@@ -967,13 +967,26 @@ def build_exec_summary(fund_df, fund_name, mkt_df, mkt_name,
 
     span = f"{MN[m['m0']-1]} {m['y0']} \u2013 {MN[m['m1']-1]} {m['y1']}"
     blocks = []
+    meta = meta or {}
 
     # 1 — Snapshot
-    blocks.append(("Snapshot", P(
+    snap = [
         f"The record under review spans {span} ({m['n']} monthly observations, ~{m['years']:.1f} years).",
         f"Over that window the strategy compounded at {m['ann']:.2f}% annualized with {m['vol']:.2f}% annualized volatility,",
         f"producing a Sharpe of {m['sharpe']:.2f} and a Sortino of {m['sortino']:.2f} (risk-free = 3M T-bills).",
-        f"{m['hit']:.2f}% of months were positive.")))
+        f"{m['hit']:.2f}% of months were positive.",
+    ]
+    deck_bits = []
+    if meta.get('strategy_type'):
+        deck_bits.append(f"a {', '.join(meta['strategy_type'][:2])} strategy")
+    if meta.get('portfolio_manager'):
+        deck_bits.append(f"run by {meta['portfolio_manager']}")
+    firm_aum = next((a for a in meta.get('aum', []) if 'firm' in a.lower()), None)
+    if firm_aum:
+        deck_bits.append(f"at a firm reporting {firm_aum}")
+    if deck_bits:
+        snap.append("Per the deck, this is " + " ".join(deck_bits) + ".")
+    blocks.append(("Snapshot", P(*snap)))
 
     # 2 — Drawdowns
     dd_txt = [f"The deepest peak-to-trough drawdown was {m['mdd']:.2f}%, giving a Calmar ratio of {m['calmar']:.2f}."]
@@ -1038,10 +1051,11 @@ def build_exec_summary(fund_df, fund_name, mkt_df, mkt_name,
     return blocks
 
 
-def build_ddq(fund_df, fund_name, mkt_df):
+def build_ddq(fund_df, fund_name, mkt_df, meta=None):
     """Return [(category, [(question, socratic_type), ...]), ...]. Socratic types:
     Clarify, Assumptions, Evidence, Perspective, Implications, Meta."""
     m = _exec_metrics(fund_df, mkt_df)
+    meta = meta or {}
     worst_m = m.get('worst_m', 'the worst month'); worst = m.get('worst', 0.0)
     best_m = m.get('best_m', 'the best month'); best = m.get('best', 0.0)
     mdd = m.get('mdd', 0.0); lag1 = m.get('lag1', 0.0)
@@ -1050,7 +1064,43 @@ def build_ddq(fund_df, fund_name, mkt_df):
 
     cats = []
 
-    cats.append(("A. Investment Thesis & Edge", [
+    # Deck-specific verification — only when the deck yielded these fields.
+    deck_q = []
+    if meta.get('portfolio_manager'):
+        deck_q.append((f"The deck names {meta['portfolio_manager']} as the key investment decision-maker; "
+                       f"what is the written succession plan if they are unavailable, and who has reviewed it?", "Implications"))
+    fee_bits = []
+    if meta.get('management_fee'):
+        fee_bits.append(f"{meta['management_fee']} management")
+    if meta.get('incentive_fee'):
+        fee_bits.append(f"{meta['incentive_fee']} incentive")
+    if meta.get('hurdle'):
+        fee_bits.append(f"a {meta['hurdle']} hurdle")
+    if fee_bits:
+        deck_q.append((f"Stated terms are {', '.join(fee_bits)}; how do these compare to your most-favoured-nation "
+                       f"investors, and what drives any difference?", "Clarify"))
+    if meta.get('aum'):
+        deck_q.append((f"The deck reports {('; '.join(meta['aum'][:3]))}; how have these moved over the last eight "
+                       f"quarters, and what hard capacity remains before returns degrade?", "Evidence"))
+    liq_bits = [meta[k] for k in ('redemption', 'notice', 'lockup', 'gate') if meta.get(k)]
+    if liq_bits:
+        deck_q.append((f"Liquidity terms shown are {', '.join(liq_bits)}; how do these align with the time it would "
+                       f"actually take to liquidate the book in a stressed market?", "Implications"))
+    sp_bits = []
+    for k, lbl in (('prime_broker', 'prime broker'), ('administrator', 'administrator'),
+                   ('auditor', 'auditor'), ('legal_counsel', 'legal counsel')):
+        if meta.get(k):
+            sp_bits.append(f"{lbl} {meta[k]}")
+    if sp_bits:
+        deck_q.append((f"Service providers named are {', '.join(sp_bits)}; when was each last reviewed or replaced, "
+                       f"and what would trigger a change?", "Evidence"))
+    if meta.get('inception'):
+        deck_q.append((f"The track is stated from {meta['inception']}; is the full since-inception series independently "
+                       f"administered and audited, with no excluded periods?", "Evidence"))
+    if deck_q:
+        cats.append(("Deck-Specific Verification", deck_q))
+
+    cats.append(("Investment Thesis & Edge", [
         ("In your own words, what specific market inefficiency does the strategy exploit, and why does it persist?", "Clarify"),
         ("What must be true about market structure or participant behaviour for that edge to keep working?", "Assumptions"),
         ("What evidence, beyond returns, would convince a skeptic the edge is real rather than a factor exposure?", "Evidence"),
@@ -1058,7 +1108,7 @@ def build_ddq(fund_df, fund_name, mkt_df):
         ("If your primary edge were arbitraged away tomorrow, what in the process would still generate return?", "Implications"),
     ]))
 
-    cats.append(("B. Performance & Attribution", [
+    cats.append(("Performance & Attribution", [
         (f"Walk us through {best_m}, the best month at {best:.2f}% \u2014 what drove it, and was it repeatable or idiosyncratic?", "Clarify"),
         (f"In {worst_m} the strategy returned {worst:.2f}%; what was the proximate cause and what changed afterward?", "Evidence"),
         ("What portion of lifetime return is attributable to a handful of positions, and what does that imply about breadth?", "Implications"),
@@ -1074,9 +1124,9 @@ def build_ddq(fund_df, fund_name, mkt_df):
     ]
     if beta is not None:
         risk_q.append((f"Realized beta to the market is {beta:.2f}; how much of your return survives if you hedge that beta out?", "Perspective"))
-    cats.append(("C. Risk Management & Drawdowns", risk_q))
+    cats.append(("Risk Management & Drawdowns", risk_q))
 
-    cats.append(("D. Portfolio Construction, Liquidity & Capacity", [
+    cats.append(("Portfolio Construction, Liquidity & Capacity", [
         ("How many days to liquidate the book at 20% of ADV without moving prices, in both calm and stressed markets?", "Clarify"),
         ("What is the strategy's honest capacity, and what evidence from your own trading supports that number?", "Evidence"),
         ("What assumption about market liquidity is embedded in your position sizing, and when has it failed?", "Assumptions"),
@@ -1085,14 +1135,14 @@ def build_ddq(fund_df, fund_name, mkt_df):
 
     smooth_note = (f"first-order autocorrelation of monthly returns is {lag1:.2f}"
                    + (" \u2014 elevated, which can signal stale marks" if lag1 >= 0.2 else ""))
-    cats.append(("E. Valuation, Marks & Return Smoothing", [
+    cats.append(("Valuation, Marks & Return Smoothing", [
         (f"Our analysis shows {smooth_note}; how are hard-to-value positions priced, and by whom?", "Evidence"),
         ("Who independently verifies marks, how often, and what happens when their price disagrees with yours?", "Clarify"),
         ("What assumptions underlie your fair-value process for the least liquid 10% of the book?", "Assumptions"),
         ("If a third party re-priced the portfolio at quarter-end, where would the largest differences appear, and why?", "Implications"),
     ]))
 
-    cats.append(("F. Organization, Team & Key-Person Succession", [
+    cats.append(("Organization, Team & Key-Person Succession", [
         ("Who are the decision-makers, and which single departure would most damage the franchise?", "Clarify"),
         ("What is the written succession plan for the CIO and other key persons, and who has seen it?", "Evidence"),
         ("What assumptions about staff retention underpin your continuity \u2014 vesting, equity, non-competes?", "Assumptions"),
@@ -1100,7 +1150,7 @@ def build_ddq(fund_df, fund_name, mkt_df):
         ("If the founder were unavailable for six months, what concretely changes in how capital is managed?", "Implications"),
     ]))
 
-    cats.append(("G. Operations, Counterparties & Disaster Recovery", [
+    cats.append(("Operations, Counterparties & Disaster Recovery", [
         ("Who are your prime brokers, administrator and auditor, and when did each last change?", "Clarify"),
         ("Describe your business-continuity and disaster-recovery plan \u2014 when was it last tested, and what failed?", "Evidence"),
         ("What assumptions does your operational setup make about counterparty solvency and access to financing?", "Assumptions"),
@@ -1108,7 +1158,7 @@ def build_ddq(fund_df, fund_name, mkt_df):
         ("Where is the line between investment risk and operational risk in your own org chart, and who owns each?", "Meta"),
     ]))
 
-    cats.append(("H. Compliance, Alignment & Terms", [
+    cats.append(("Compliance, Alignment & Terms", [
         ("How much of the principals' liquid net worth is invested alongside LPs, and on the same terms?", "Clarify"),
         ("What conflicts of interest exist across vehicles or share classes, and how are they disclosed and managed?", "Evidence"),
         ("What assumptions about fee and liquidity terms are baked into your reported net returns for this class?", "Assumptions"),

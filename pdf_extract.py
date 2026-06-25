@@ -290,6 +290,120 @@ def _cumulative_return(df):
     return float((1 + df['ret'] / 100.0).prod() - 1)
 
 
+# ── Deck metadata ─────────────────────────────────────────────────────────────
+# Best-effort capture of qualitative tear-sheet fields (PM, AUM, fees, terms,
+# service providers) to enrich the DDQ. Only fields actually found are returned.
+
+def _first_match(text, patterns, group=1):
+    for p in patterns:
+        m = re.search(p, text, re.I)
+        if m:
+            return re.sub(r'\s+', ' ', m.group(group)).strip(' .,:;')
+    return None
+
+
+def _unique_pcts(text, anchor_patterns):
+    found = []
+    for p in anchor_patterns:
+        for m in re.finditer(p, text, re.I):
+            v = next((g for g in m.groups() if g), None)
+            if v and v not in found:
+                found.append(v)
+    return found
+
+
+def extract_deck_metadata(text):
+    meta = {}
+    if not text:
+        return meta
+
+    pm = _first_match(text, [
+        r'Portfolio Manager[,:]?\s+(?:is\s+)?([A-Z][a-zA-Z.]+(?:\s+[A-Z][a-zA-Z.]+){1,2})',
+        r'founded (?:in \d{4} )?by\s+([A-Z][a-zA-Z.]+(?:\s+[A-Z][a-zA-Z.]+){1,2})',
+        r'\bby\s+([A-Z][a-z]+\s+[A-Z][a-z]+),\s+who\b',
+    ])
+    if pm:
+        meta['portfolio_manager'] = pm
+
+    mgmt = _unique_pcts(text, [
+        r'([\d.]+%)\s*(?:per annum\s*|annual\s*)?management fee',
+        r'management fee(?:\s*rate)?\s*(?:of\s*|:\s*|\s+Class\s+[\w-]+:\s*)([\d.]+%)',
+    ])
+    if mgmt:
+        meta['management_fee'] = ', '.join(mgmt[:3])
+
+    inc = _unique_pcts(text, [
+        r'incentive (?:fee|allocation)(?:\s*rate)?[^%\d]{0,40}?([\d.]+%)',
+        r'([\d.]+%)\s*(?:annual\s*)?(?:incentive|performance)\s*(?:fee|allocation)',
+    ])
+    if inc:
+        meta['incentive_fee'] = ', '.join(inc[:3])
+
+    hurdle = _first_match(text, [r'([\d.]+%)[^.\n]{0,20}hurdle'])
+    if hurdle:
+        meta['hurdle'] = hurdle
+
+    aum = []
+    for m in re.finditer(r'((?:Strategy|Firm|Fund|CKMF)?\s*AUM[^$\n]{0,18}\$\s*[\d.,]+\s*'
+                         r'(?:billion|million|B|M|bn|mm)?)', text, re.I):
+        s = re.sub(r'\s+', ' ', m.group(1)).strip()
+        if s not in aum:
+            aum.append(s)
+    if aum:
+        meta['aum'] = aum[:4]
+
+    inception = _first_match(text, [
+        r'launched on ([A-Z][a-z]+ \d{1,2},?\s*\d{4})',
+        r'commenced operations[^.]*?([A-Z][a-z]+ \d{1,2},?\s*\d{4})',
+        r'beginning ([A-Z][a-z]+ \d{1,2},?\s*\d{4})[^.]*?date of funding',
+        r'inception[^.\d]{0,20}([A-Z][a-z]+ \d{1,2},?\s*\d{4})',
+    ])
+    if inception:
+        meta['inception'] = inception
+
+    redemption = _first_match(text, [r'((?:Quarterly|Monthly|Annual|Daily|Weekly)) redemptions'])
+    if redemption:
+        meta['redemption'] = redemption + ' redemptions'
+
+    notice = _first_match(text, [r'Notice Period\s+([\w ]+?)(?:Lock|\n)', r'(\d+\s*Days?)\s*(?:notice)?'])
+    if notice:
+        meta['notice'] = notice
+
+    lockup = _first_match(text, [
+        r'(\d+[- ]?month(?:\s*(?:hard|soft))?[\w\- ]{0,30}?lock[- ]?up)',
+        r'Lock[- ]?[Uu]p(?: Period)?\s*[:]?\s*(\d[\w ]{0,12}(?:Yr|year|month))',
+    ])
+    if lockup:
+        lockup = re.sub(r'(?<=[a-z])(soft|hard|lock)', r' \1', lockup)
+        meta['lockup'] = re.sub(r'\s+', ' ', lockup).strip()
+
+    gate = _first_match(text, [r'(\d+%\s+[\w\- ]*gate)'])
+    if gate:
+        meta['gate'] = gate
+
+    pb = _first_match(text, [r'Prime Brokers?\s+([A-Za-z][\w& ]+?)(?:Management Fee|Administrator|Auditor)'])
+    if pb:
+        meta['prime_broker'] = pb
+    admin = _first_match(text, [r'Administrator\s+([A-Za-z][\w& ]+?)(?:Auditor|Incentive|Legal|Liquidity)'])
+    if admin:
+        meta['administrator'] = admin
+    auditor = _first_match(text, [r'Auditor\s+([A-Za-z][\w& ]+?)(?:Legal|Liquidity|Notice|\n)'])
+    if auditor:
+        meta['auditor'] = auditor
+    legal = _first_match(text, [r'Legal Counsel\s+([A-Za-z][\w& ]+?)(?:Lock|Notice|Maples|CKMF|\n)'])
+    if legal:
+        meta['legal_counsel'] = legal
+
+    kws = [k for k in ('event-driven', 'long-only', 'long/short', 'market neutral',
+                       'global macro', 'multi-strategy', 'multi-strat', 'contrarian',
+                       'value', 'credit', 'distressed', 'quantitative')
+           if re.search(k, text, re.I)]
+    if kws:
+        meta['strategy_type'] = kws[:4]
+
+    return meta
+
+
 # Index/benchmark names that should never be mistaken for the fund's own track.
 _BENCHMARK_KEYWORDS = (
     'HFRI', 'HFRX', 'HFR ', 'S&P', 'SP500', 'MSCI', 'RUSSELL', 'BLOOMBERG',
@@ -322,6 +436,7 @@ def extract_return_series(file_like):
         return [], [f'Could not open PDF: {exc}']
 
     candidates = []
+    full_text = []
     with pdf:
         for pno, page in enumerate(pdf.pages, start=1):
             try:
@@ -347,6 +462,7 @@ def extract_return_series(file_like):
                 page_text = page.extract_text() or ''
             except Exception:
                 page_text = ''
+            full_text.append(page_text)
             for label, recs in _parse_text_grid(page_text).items():
                 df = _dedupe(recs)
                 if len(df) >= 6:
@@ -400,4 +516,5 @@ def extract_return_series(file_like):
     if not candidates:
         warnings.append('No monthly-return grid was found in this PDF. The table '
                         'may be an image, or in a layout the parser can\'t read.')
-    return candidates, warnings
+    metadata = extract_deck_metadata('\n'.join(full_text))
+    return candidates, warnings, metadata
