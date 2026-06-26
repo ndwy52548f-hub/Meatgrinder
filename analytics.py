@@ -1170,3 +1170,105 @@ def build_ddq(fund_df, fund_name, mkt_df, meta=None):
         ("Are we asking the right questions to understand this strategy, or is there a question we should be asking that we are not?", "Meta"),
     ]))
     return cats
+
+
+# ─── SIGNIFICANCE, TAIL RISK, CAPTURE, DE-SMOOTHING ───────────────────────────
+
+def sharpe_significance(df):
+    """Sharpe with Lo (iid) standard error and 95% CI, plus a mean-return t-test."""
+    ex = build_excess_returns(df)
+    n = len(ex)
+    out = {'n': n}
+    if n < 3:
+        return out
+    sd = np.std(ex, ddof=1)
+    sr_m = float(np.mean(ex) / sd) if sd else 0.0
+    se_m = np.sqrt((1 + 0.5 * sr_m**2) / n)            # Lo (2002), iid case
+    rt12 = np.sqrt(12)
+    out['sharpe'] = sr_m * rt12
+    out['se'] = se_m * rt12
+    out['ci'] = (out['sharpe'] - 1.96 * out['se'], out['sharpe'] + 1.96 * out['se'])
+    out['sharpe_t'] = sr_m / se_m if se_m else np.nan       # H0: SR = 0
+    r = df['ret'].values.astype(float)
+    sdr = np.std(r, ddof=1)
+    out['ret_t'] = float(np.mean(r) / (sdr / np.sqrt(n))) if sdr else np.nan
+    out['ret_p'] = float(2 * (1 - scipy_stats.t.cdf(abs(out['ret_t']), n - 1))) if sdr else np.nan
+    return out
+
+
+def tail_risk(rets):
+    """VaR/CVaR (historical + Cornish-Fisher), Ulcer, tail ratio, Omega, gain-to-pain.
+    All return-based figures are monthly percent."""
+    r = np.asarray(rets, float)
+    n = len(r)
+    out = {'n': n}
+    if n < 4:
+        return out
+    out['var95'] = float(np.percentile(r, 5))
+    out['var99'] = float(np.percentile(r, 1))
+    tail95 = r[r <= out['var95']]
+    tail99 = r[r <= out['var99']]
+    out['cvar95'] = float(tail95.mean()) if len(tail95) else out['var95']
+    out['cvar99'] = float(tail99.mean()) if len(tail99) else out['var99']
+    mu, sd = r.mean(), r.std(ddof=1)
+    S = skewness(r); K = excess_kurtosis(r)
+    for lvl, key in ((0.05, 'mvar95'), (0.01, 'mvar99')):
+        z = scipy_stats.norm.ppf(lvl)
+        zcf = (z + (z**2 - 1) * S / 6 + (z**3 - 3*z) * K / 24
+               - (2*z**3 - 5*z) * S**2 / 36)
+        out[key] = float(mu + zcf * sd)
+    dd = drawdown_series(r)
+    out['ulcer'] = float(np.sqrt(np.mean(dd**2)))
+    p95, p5 = np.percentile(r, 95), np.percentile(r, 5)
+    out['tail_ratio'] = float(abs(p95 / p5)) if p5 != 0 else np.nan
+    pos, neg = r[r > 0], r[r < 0]
+    loss = abs(neg.sum())
+    out['gain_to_pain'] = float(r.sum() / loss) if loss else np.inf
+    out['omega'] = float(pos.sum() / loss) if loss else np.inf
+    return out
+
+
+def capture_ratios(fund_df, mkt_df):
+    """Geometric up- and down-market capture vs a benchmark, in percent."""
+    m = fund_df[['year', 'month', 'ret']].rename(columns={'ret': 'f'})
+    m = m.merge(mkt_df[['year', 'month', 'ret']].rename(columns={'ret': 'm'}),
+                on=['year', 'month'], how='inner')
+    if m.empty:
+        return {}
+
+    def cap(mask):
+        f, k = m['f'][mask].values, m['m'][mask].values
+        if len(f) == 0:
+            return None
+        fc = np.prod(1 + f / 100) - 1
+        kc = np.prod(1 + k / 100) - 1
+        return float(fc / kc * 100) if kc != 0 else None
+    return {'up_capture': cap(m['m'] > 0), 'down_capture': cap(m['m'] < 0),
+            'n_up': int((m['m'] > 0).sum()), 'n_dn': int((m['m'] < 0).sum())}
+
+
+def desmooth_stats(df, mkt_df):
+    """Geltner/Okunev-White first-order unsmoothing. Returns reported vs unsmoothed
+    volatility, Sharpe and market beta, plus the unsmoothed series for charting."""
+    r = df['ret'].values.astype(float)
+    n = len(r)
+    out = {'n': n}
+    if n < 6:
+        return out
+    rho = acf(r, 1)[0]
+    out['rho'] = float(rho)
+    if abs(1 - rho) < 1e-6:
+        rho = 0.0
+    ru = (r[1:] - rho * r[:-1]) / (1 - rho)          # unsmoothed, aligned to df[1:]
+    sub = df.iloc[1:].copy()
+    sub_u = sub.copy(); sub_u['ret'] = ru
+
+    out['vol_rep'] = ann_vol(r); out['vol_uns'] = ann_vol(ru)
+    out['sharpe_rep'] = sharpe_with_rf(df); out['sharpe_uns'] = sharpe_with_rf(sub_u)
+
+    def beta_vs(d):
+        reg = piecewise_beta_regression(d, mkt_df)
+        return reg['beta'] if reg else None
+    out['beta_rep'] = beta_vs(df); out['beta_uns'] = beta_vs(sub_u)
+    out['unsmoothed_df'] = sub_u[['year', 'month', 'ret']].reset_index(drop=True)
+    return out

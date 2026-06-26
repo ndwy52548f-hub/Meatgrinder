@@ -782,3 +782,29 @@ def chart_shocks(fund_df: pd.DataFrame, fund_name: str,
     for ann in fig.layout.annotations:   # subplot titles
         ann.font = dict(family=FONT_UI, size=13, color='#006B7A')
     return fig
+
+
+def chart_desmooth(fund_df: pd.DataFrame, mkt_df: pd.DataFrame) -> go.Figure:
+    """Cumulative growth of $100: reported series vs first-order unsmoothed."""
+    from analytics import desmooth_stats
+    ds = desmooth_stats(fund_df, mkt_df)
+    fig = go.Figure()
+    rep = fund_df.iloc[1:].reset_index(drop=True)
+    labels = [f"{MN[int(r.month)-1]} {int(r.year)}" for r in rep.itertuples()]
+    def grow(series):
+        return list(100 * np.cumprod(1 + np.asarray(series, float) / 100))
+    fig.add_trace(go.Scatter(x=labels, y=grow(rep['ret'].values), name='Reported',
+                             line=dict(color='#006B7A', width=2.5),
+                             hovertemplate='%{y:.2f}<extra>Reported</extra>'))
+    if 'unsmoothed_df' in ds:
+        fig.add_trace(go.Scatter(x=labels, y=grow(ds['unsmoothed_df']['ret'].values),
+                                 name='Unsmoothed',
+                                 line=dict(color='#A93420', width=2, dash='dot'),
+                                 hovertemplate='%{y:.2f}<extra>Unsmoothed</extra>'))
+    _apply_base(fig, yaxis_title='Growth of $100', plot_bgcolor='#FFFFFF', height=420,
+        xaxis=dict(showticklabels=False, gridcolor='#E5ECEC', zeroline=False),
+        yaxis=dict(gridcolor='#E5ECEC', tickfont=dict(family=FONT_MONO, size=13, color='#1A1A1A')),
+        legend=dict(orientation='h', yanchor='bottom', y=1.01, x=0,
+                    font=dict(color='#1A1A1A')))
+    fig.update_layout(showlegend=True)
+    return fig

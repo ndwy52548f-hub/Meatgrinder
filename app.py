@@ -15,6 +15,7 @@ from analytics import (
     compute_outliers, normality_tests, top_drawdowns, period_stats,
     seasonality, macro_events_table, piecewise_beta_regression,
     build_exec_summary, build_ddq,
+    sharpe_significance, tail_risk, capture_ratios, desmooth_stats,
     acf, acf_conf_band, rolling_metrics, parse_uploaded_file,
     MSCI_DF, AGG_DF, HFRX_INDICES,
 )
@@ -23,7 +24,7 @@ from charts import (
     chart_cumulative, chart_drawdowns, chart_monthly_bars,
     chart_histogram, chart_qq, chart_acf, chart_calendar_heatmap,
     chart_rolling, chart_regression, chart_seasonality_monthly,
-    chart_seasonality_quarterly, chart_best_worst, chart_up_down_capture, chart_waterfall, chart_shocks, MN,
+    chart_seasonality_quarterly, chart_best_worst, chart_up_down_capture, chart_waterfall, chart_shocks, chart_desmooth, MN,
 )
 
 # ─── PAGE CONFIG ──────────────────────────────────────────────────────────────
@@ -840,7 +841,8 @@ st.markdown(f"""
 
 tabs = st.tabs([
     "Exec Summary", "Summary", "Calendar", "Drawdowns", "Distribution",
-    "Regression", "Co-Movement", "Waterfall", "Rolling", "Seasonality", "Multi-Period",
+    "Regression", "Significance", "Tail Risk", "De-Smoothing",
+    "Co-Movement", "Waterfall", "Rolling", "Seasonality", "Multi-Period",
     "Macro Events", "Shocks", "DDQ", "Data", "Input",
 ])
 
@@ -849,7 +851,7 @@ tabs = st.tabs([
 # TAB 10 — INPUT
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[15]:
+with tabs[18]:
     st.markdown('<div class="mg-sh">Input &amp; Parsing Diagnostics</div>', unsafe_allow_html=True)
     st.markdown(f"""
 <div class="mg-id">
@@ -1256,10 +1258,124 @@ with tabs[5]:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 5 — CO-MOVEMENT
+# TAB 6 — SIGNIFICANCE
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tabs[6]:
+    st.markdown('<div class="mg-sh" style="margin-top:14px;">Statistical Significance</div>', unsafe_allow_html=True)
+    _sig = sharpe_significance(fund_df)
+    _reg = piecewise_beta_regression(fund_df, MSCI_DF)
+    if _sig.get('n', 0) < 3:
+        st.markdown('<div class="mg-note">Not enough observations for inference.</div>', unsafe_allow_html=True)
+    else:
+        _ci = _sig['ci']
+        _rows = [
+            ("Observations (months)", f"{_sig['n']}"),
+            ("Annualized Sharpe", f"{_sig['sharpe']:.4f}"),
+            ("Sharpe std. error (Lo)", f"{_sig['se']:.4f}"),
+            ("Sharpe 95% CI", f"{_ci[0]:.4f} to {_ci[1]:.4f}"),
+            ("Sharpe t-stat (H\u2080: SR=0)", f"{_sig['sharpe_t']:.4f}"),
+            ("Mean-return t-stat", f"{_sig['ret_t']:.4f}"),
+            ("Mean-return p-value", f"{_sig['ret_p']:.4f}"),
+        ]
+        if _reg:
+            _ac = _reg['alpha_ci']
+            _rows += [
+                ("Monthly alpha vs MSCI World Hdg", f"{_reg['alpha']:.4f}%"),
+                ("Alpha t-stat", f"{_reg['t_alpha']:.4f}"),
+                ("Alpha 95% CI", f"{_ac[0]:.4f}% to {_ac[1]:.4f}%"),
+            ]
+        _html = '<table style="width:100%;border-collapse:collapse;font-size:15px;color:#1A1A1A;">'
+        for k, v in _rows:
+            _html += (f'<tr><td style="padding:7px 10px;border-bottom:1px solid #E5ECEC;">{k}</td>'
+                      f'<td style="padding:7px 10px;border-bottom:1px solid #E5ECEC;text-align:right;'
+                      f'font-family:{"JetBrains Mono, monospace"};font-weight:600;">{v}</td></tr>')
+        _html += '</table>'
+        st.markdown(_html, unsafe_allow_html=True)
+        _sig_note = ("Significant at 5% (CI excludes 0)." if _ci[0] > 0
+                     else "Not significant at 5% \u2014 the 95% interval includes a Sharpe of 0.")
+        st.markdown(f'<div style="color:#1A1A1A;font-size:15px;margin-top:12px;">{_sig_note} '
+                    f'Standard error uses Lo (2002) under an i.i.d. assumption; serial correlation would widen it.</div>',
+                    unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 7 — TAIL RISK
+# ══════════════════════════════════════════════════════════════════════════════
+
+with tabs[7]:
+    st.markdown('<div class="mg-sh" style="margin-top:14px;">Tail Risk &amp; Ratios</div>', unsafe_allow_html=True)
+    _tr = tail_risk(fund_df['ret'].values)
+    _cap = capture_ratios(fund_df, MSCI_DF)
+    if _tr.get('n', 0) < 4:
+        st.markdown('<div class="mg-note">Not enough observations.</div>', unsafe_allow_html=True)
+    else:
+        def _tbl(title, rows):
+            h = f'<div class="mg-sh" style="margin-top:16px;">{title}</div>'
+            h += '<table style="width:100%;border-collapse:collapse;font-size:15px;color:#1A1A1A;">'
+            for k, v in rows:
+                h += (f'<tr><td style="padding:7px 10px;border-bottom:1px solid #E5ECEC;">{k}</td>'
+                      f'<td style="padding:7px 10px;border-bottom:1px solid #E5ECEC;text-align:right;'
+                      f'font-family:JetBrains Mono, monospace;font-weight:600;">{v}</td></tr>')
+            return h + '</table>'
+        st.markdown(_tbl("Monthly Value-at-Risk", [
+            ("Historical VaR 95%", f"{_tr['var95']:.2f}%"),
+            ("Historical VaR 99%", f"{_tr['var99']:.2f}%"),
+            ("Modified VaR 95% (Cornish-Fisher)", f"{_tr['mvar95']:.2f}%"),
+            ("Modified VaR 99% (Cornish-Fisher)", f"{_tr['mvar99']:.2f}%"),
+            ("Expected shortfall (CVaR) 95%", f"{_tr['cvar95']:.2f}%"),
+            ("Expected shortfall (CVaR) 99%", f"{_tr['cvar99']:.2f}%"),
+        ]), unsafe_allow_html=True)
+        _ratio_rows = [
+            ("Ulcer index", f"{_tr['ulcer']:.2f}"),
+            ("Tail ratio (P95 / |P5|)", f"{_tr['tail_ratio']:.2f}"),
+            ("Gain-to-pain", f"{_tr['gain_to_pain']:.2f}"),
+            ("Omega (threshold 0)", f"{_tr['omega']:.2f}"),
+        ]
+        if _cap.get('up_capture') is not None:
+            _ratio_rows.append(("Up-market capture vs MSCI World Hdg", f"{_cap['up_capture']:.2f}%"))
+        if _cap.get('down_capture') is not None:
+            _ratio_rows.append(("Down-market capture vs MSCI World Hdg", f"{_cap['down_capture']:.2f}%"))
+        st.markdown(_tbl("Ratios &amp; Capture", _ratio_rows), unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 8 — DE-SMOOTHING
+# ══════════════════════════════════════════════════════════════════════════════
+
+with tabs[8]:
+    st.markdown('<div class="mg-sh" style="margin-top:14px;">Return De-Smoothing</div>', unsafe_allow_html=True)
+    _ds = desmooth_stats(fund_df, MSCI_DF)
+    if _ds.get('n', 0) < 6:
+        st.markdown('<div class="mg-note">Not enough observations.</div>', unsafe_allow_html=True)
+    else:
+        st.markdown(f'<div style="color:#1A1A1A;font-size:15px;margin-bottom:10px;">'
+                    f'First-order autocorrelation (\u03c1) = <b>{_ds["rho"]:.4f}</b>. The unsmoothed series removes that '
+                    f'serial dependence (Geltner/Okunev-White); compare the risk figures below.</div>', unsafe_allow_html=True)
+        _drows = [
+            ("Annualized volatility", f"{_ds['vol_rep']:.2f}%", f"{_ds['vol_uns']:.2f}%"),
+            ("Sharpe", f"{_ds['sharpe_rep']:.2f}", f"{_ds['sharpe_uns']:.2f}"),
+            ("Beta vs MSCI World Hdg", f"{_ds['beta_rep']:.2f}", f"{_ds['beta_uns']:.2f}"),
+        ]
+        _h = ('<table style="width:100%;border-collapse:collapse;font-size:15px;color:#1A1A1A;">'
+              '<tr><th style="text-align:left;padding:7px 10px;border-bottom:2px solid #006B7A;">Metric</th>'
+              '<th style="text-align:right;padding:7px 10px;border-bottom:2px solid #006B7A;">Reported</th>'
+              '<th style="text-align:right;padding:7px 10px;border-bottom:2px solid #006B7A;">Unsmoothed</th></tr>')
+        for k, a, b in _drows:
+            _h += (f'<tr><td style="padding:7px 10px;border-bottom:1px solid #E5ECEC;">{k}</td>'
+                   f'<td style="padding:7px 10px;border-bottom:1px solid #E5ECEC;text-align:right;font-family:JetBrains Mono, monospace;font-weight:600;">{a}</td>'
+                   f'<td style="padding:7px 10px;border-bottom:1px solid #E5ECEC;text-align:right;font-family:JetBrains Mono, monospace;font-weight:600;">{b}</td></tr>')
+        _h += '</table>'
+        st.markdown(_h, unsafe_allow_html=True)
+        st.plotly_chart(chart_desmooth(fund_df, MSCI_DF), use_container_width=True,
+                        config={'displayModeBar': False})
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 9 — CO-MOVEMENT
+# ══════════════════════════════════════════════════════════════════════════════
+
+with tabs[9]:
     st.markdown('<div class="mg-sh" style="margin-top:14px;">Co-Movement in Market Extremes</div>', unsafe_allow_html=True)
     c_bw_l, c_bw_r = st.columns(2, gap="large")
     with c_bw_l:
@@ -1281,7 +1397,7 @@ with tabs[6]:
 # TAB 6 — WATERFALL
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[7]:
+with tabs[10]:
     st.markdown('<div class="mg-sh" style="margin-top:14px;">Strategy vs Market Waterfall</div>', unsafe_allow_html=True)
     st.markdown('<div class="mg-note">Every overlapping month sorted by market return, best (left) to worst (right). Bottom: MSCI World Hedged, shaded by its own return. Top: the fund over the same ordering — blue when positive, orange/red when negative. Hover any bar for the month.</div>', unsafe_allow_html=True)
     st.plotly_chart(
@@ -1293,7 +1409,7 @@ with tabs[7]:
 # TAB 7 — ROLLING
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[8]:
+with tabs[11]:
     if len(fund_df) < 12:
         st.warning("Need at least 12 months of data for rolling metrics.")
     else:
@@ -1312,7 +1428,7 @@ with tabs[8]:
 # TAB 6 — SEASONALITY
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[9]:
+with tabs[12]:
     seas = seasonality(fund_df)
     c_sm, c_sq = st.columns(2, gap="large")
     with c_sm:
@@ -1338,7 +1454,7 @@ with tabs[9]:
 # TAB 7 — MULTI-PERIOD
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[10]:
+with tabs[13]:
     last_year  = int(fund_df.iloc[-1]['year'])
     last_month = int(fund_df.iloc[-1]['month'])
 
@@ -1397,7 +1513,7 @@ with tabs[10]:
 # TAB 8 — MACRO EVENTS
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[11]:
+with tabs[14]:
     ev_rows = macro_events_table(fund_df, bm1_df)
     if not ev_rows:
         st.info("No macro event periods overlap with this fund's history.")
@@ -1422,7 +1538,7 @@ with tabs[11]:
 # TAB 11 — SHOCKS
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[12]:
+with tabs[15]:
     st.markdown('<div class="mg-sh" style="margin-top:14px;">Performance During Discrete Shock Events</div>', unsafe_allow_html=True)
     st.markdown('<div class="mg-note">The four events with the largest Strategy-vs-market return differential. Each panel shows the compound return of every series over that window — blue when positive, orange/red when negative.</div>', unsafe_allow_html=True)
     st.plotly_chart(
@@ -1435,7 +1551,7 @@ with tabs[12]:
 # TAB 13 — DDQ
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[13]:
+with tabs[16]:
     st.markdown('<div class="mg-sh" style="margin-top:14px;">Due-Diligence Questionnaire</div>', unsafe_allow_html=True)
     st.markdown('<div class="mg-note">Tags: Clarify · Assumptions · Evidence · Perspective · Implications · Meta</div>', unsafe_allow_html=True)
     _qno = 0
@@ -1456,7 +1572,7 @@ with tabs[13]:
 # TAB 14 — DATA
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tabs[14]:
+with tabs[17]:
     _, c_s = st.columns([3, 1])
     with c_s:
         search = st.text_input("Filter rows", placeholder="e.g. 2020 or Mar")
