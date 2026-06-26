@@ -345,7 +345,8 @@ table.mg-tbl tr:hover td      { background: #EFF6F6; }
 table.mg-tbl td.pos { color: #1A8A50; font-weight: 500; }
 table.mg-tbl td.neg { color: #CC2222; font-weight: 500; }
 table.mg-tbl td.gld { color: #9A6800; font-weight: 500; }
-table.mg-tbl td.lbl { color: #5F5E56; }
+table.mg-tbl td.lbl { color: #5F5E56; text-align: left; }
+table.mg-tbl th.lbl { text-align: left; }
 table.mg-tbl th:first-child,
 table.mg-tbl td:first-child { text-align: left; }
 
@@ -840,29 +841,6 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 
-# ─── REPORT ───────────────────────────────────────────────────────────────────
-
-_c_pdf, _c_dl, _ = st.columns([1.1, 1.1, 4])
-with _c_pdf:
-    if st.button("Generate PDF", type="primary"):
-        with st.spinner("Building report\u2026"):
-            try:
-                _safe = _re.sub(r'[^A-Za-z0-9]+', '_', str(fund_name)).strip('_') or 'Report'
-                _ym = f"{int(fund_df.iloc[-1]['year'])}-{int(fund_df.iloc[-1]['month']):02d}"
-                st.session_state['report_pdf'] = build_report(
-                    fund_df, fund_name, MSCI_DF, 'MSCI World Hedged',
-                    AGG_DF, bm3_df, bm3_name, meta=st.session_state.get('deck_meta'))
-                st.session_state['report_name'] = f"Argus_{_safe}_{_ym}.pdf"
-            except Exception as _e:
-                st.session_state['report_pdf'] = None
-                st.error(f"Report failed: {_e}")
-with _c_dl:
-    if st.session_state.get('report_pdf'):
-        st.download_button("Download PDF", st.session_state['report_pdf'],
-                           file_name=st.session_state.get('report_name', 'Argus_Report.pdf'),
-                           mime="application/pdf")
-
-
 # ─── TABS ─────────────────────────────────────────────────────────────────────
 
 tabs = st.tabs([
@@ -929,6 +907,26 @@ with tabs[18]:
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tabs[0]:
+    with st.container(border=True):
+        _c_pdf, _c_dl, _ = st.columns([1.1, 1.1, 4])
+        with _c_pdf:
+            if st.button("Generate PDF", type="primary"):
+                with st.spinner("Building report\u2026"):
+                    try:
+                        _safe = _re.sub(r'[^A-Za-z0-9]+', '_', str(fund_name)).strip('_') or 'Report'
+                        _ym = f"{int(fund_df.iloc[-1]['year'])}-{int(fund_df.iloc[-1]['month']):02d}"
+                        st.session_state['report_pdf'] = build_report(
+                            fund_df, fund_name, MSCI_DF, 'MSCI World Hedged',
+                            AGG_DF, bm3_df, bm3_name, meta=st.session_state.get('deck_meta'))
+                        st.session_state['report_name'] = f"Argus_{_safe}_{_ym}.pdf"
+                    except Exception as _e:
+                        st.session_state['report_pdf'] = None
+                        st.error(f"Report failed: {_e}")
+        with _c_dl:
+            if st.session_state.get('report_pdf'):
+                st.download_button("Download PDF", st.session_state['report_pdf'],
+                                   file_name=st.session_state.get('report_name', 'Argus_Report.pdf'),
+                                   mime="application/pdf")
     for _head, _body in build_exec_summary(fund_df, fund_name, MSCI_DF, 'MSCI World Hdg',
                                            AGG_DF, bm3_df, bm3_name,
                                            meta=st.session_state.get('deck_meta')):
@@ -973,7 +971,7 @@ with tabs[1]:
 
         html = f"""<table class="mg-tbl">
 <thead><tr>
-  <th>Metric</th>
+  <th class="lbl">Metric</th>
   <th>Full (N={len(full_rets)})</th>
   <th>Ex-Outliers (N={len(trim_rets)})</th>
 </tr></thead><tbody>"""
@@ -1034,7 +1032,7 @@ with tabs[1]:
             b2h = f'<th>{bm2_name}</th>' if bm2_al is not None else ''
             b3h = f'<th>{bm3_name}</th>' if b3 else ''
             html2 = f"""<table class="mg-tbl">
-<thead><tr><th>Metric</th><th>{fund_name}</th><th>{bm1_name}</th>{b2h}{b3h}</tr></thead><tbody>"""
+<thead><tr><th class="lbl">Metric</th><th>{fund_name}</th><th>{bm1_name}</th>{b2h}{b3h}</tr></thead><tbody>"""
             for (m, pct, dec, flip) in bm_defs:
                 html2 += f'<tr><td class="lbl">{m}</td>'
                 for st_d in ([fs, b1] + ([b2] if bm2_al is not None else []) + ([b3] if b3 else [])):
@@ -1085,7 +1083,7 @@ with tabs[2]:
     _luts = [(nm, _ret_lut(d)) for nm, d in _cal_series]
     _years = sorted({int(r.year) for r in fund_df.itertuples()})
 
-    _hd = 'background:#006B7A;color:#FFFFFF;padding:6px 6px;text-align:center;font-weight:600;'
+    _hd = 'background:#006B7A;color:#FFFFFF;padding:6px 6px;text-align:right;font-weight:600;'
     th = (f'<th style="{_hd}text-align:left;"></th><th style="{_hd}text-align:left;"></th>')
     for mn in _MONTHS:
         th += f'<th style="{_hd}">{mn}</th>'
@@ -1103,10 +1101,10 @@ with tabs[2]:
                 v = lut.get((yr, mo))
                 mvals.append(v)
                 txt = f'{v:+.2f}%' if v is not None else ''
-                row += f'<td style="text-align:center;padding:3px 5px;color:#1A1A1A;{_heat(v, 6.0)}{tb}">{txt}</td>'
+                row += f'<td style="text-align:right;padding:3px 5px;color:#1A1A1A;{_heat(v, 6.0)}{tb}">{txt}</td>'
             ytd = _ytd(mvals)
             ytd_txt = f'{ytd:+.2f}%' if ytd is not None else ''
-            row += f'<td style="text-align:center;padding:3px 6px;font-weight:700;color:#1A1A1A;{_heat(ytd, 20.0)}{tb}">{ytd_txt}</td>'
+            row += f'<td style="text-align:right;padding:3px 6px;font-weight:700;color:#1A1A1A;{_heat(ytd, 20.0)}{tb}">{ytd_txt}</td>'
             row += '</tr>'
             rows_html += row
 
@@ -1177,15 +1175,15 @@ with tabs[3]:
         st.markdown(da_html, unsafe_allow_html=True)
 
     st.markdown('<div class="mg-sh" style="margin-top:8px;">Top Drawdown Episodes</div>', unsafe_allow_html=True)
-    ep_html = '<div style="max-width:880px;"><table class="mg-tbl"><thead><tr><th>#</th><th>Drawdown</th><th>Peak</th><th>Trough</th><th>Recovery</th><th>Peak→Trough</th><th>Trough→Rec.</th><th>Total</th></tr></thead><tbody>'
+    ep_html = '<div style="max-width:880px;"><table class="mg-tbl"><thead><tr><th class="lbl">#</th><th>Drawdown</th><th class="lbl">Peak</th><th class="lbl">Trough</th><th class="lbl">Recovery</th><th>Peak→Trough</th><th>Trough→Rec.</th><th>Total</th></tr></thead><tbody>'
     for i, ep in enumerate(episodes):
         pt  = str(ep['peak_to_trough']) + 'm'
         tr  = str(ep['trough_to_recovery']) + 'm' if ep['trough_to_recovery'] is not None else 'Ongoing'
         tot = str(ep['total_months']) + 'm'        if ep['total_months'] is not None else 'Ongoing'
         ep_html += (f"<tr><td class='lbl'>{i+1}</td><td class='neg'>{_fmt(ep['drawdown'])}</td>"
                     f"<td class='lbl'>{ep['peak_date']}</td><td class='lbl'>{ep['trough_date']}</td>"
-                    f"<td class='lbl'>{ep['recovery_date']}</td><td class='lbl'>{pt}</td>"
-                    f"<td class='lbl'>{tr}</td><td class='lbl'>{tot}</td></tr>")
+                    f"<td class='lbl'>{ep['recovery_date']}</td><td>{pt}</td>"
+                    f"<td>{tr}</td><td>{tot}</td></tr>")
     ep_html += '</tbody></table></div>'
     st.markdown(ep_html, unsafe_allow_html=True)
 
@@ -1205,7 +1203,7 @@ with tabs[4]:
 
     st.markdown('<div class="mg-sh" style="margin-top:8px;">Normality Tests</div>', unsafe_allow_html=True)
     norm = normality_tests(rets)
-    n_html = '<table class="mg-tbl"><thead><tr><th>Test</th><th>Statistic</th><th>p-value / Critical</th><th>Reject Normality?</th></tr></thead><tbody>'
+    n_html = '<table class="mg-tbl"><thead><tr><th class="lbl">Test</th><th>Statistic</th><th>p-value / Critical</th><th>Reject Normality?</th></tr></thead><tbody>'
     jb  = norm['jb'];  jbr = jb['pval'] < 0.05
     n_html += f"<tr><td class='lbl'>Jarque-Bera</td><td>{jb['stat']:.4f}</td><td>{jb['pval']:.4f}</td><td class='{'neg' if jbr else 'pos'}'>{'Yes ✗' if jbr else 'No ✓'}</td></tr>"
     if 'sw' in norm:
@@ -1269,7 +1267,7 @@ with tabs[5]:
                 ("  N down",             f"{reg['n_dn']}"),
                 ("Convexity (β⁺ − β⁻)", f"{reg['convexity']:.4f}" if reg['convexity'] is not None else '—'),
             ]
-            r_html = '<table class="mg-tbl"><thead><tr><th>Statistic</th><th>Value</th></tr></thead><tbody>'
+            r_html = '<table class="mg-tbl"><thead><tr><th class="lbl">Statistic</th><th>Value</th></tr></thead><tbody>'
             for lbl, val in reg_rows:
                 s = 'color:#1A1A1A;padding-left:20px;' if lbl.startswith('  ') else ''
                 r_html += f'<tr><td class="lbl" style="{s}">{lbl.strip()}</td><td>{val}</td></tr>'
@@ -1465,7 +1463,7 @@ with tabs[12]:
         st.plotly_chart(chart_seasonality_quarterly(seas), use_container_width=True, config={'displayModeBar': False})
 
     st.markdown('<div class="mg-sh" style="margin-top:8px;">Monthly Seasonality Detail</div>', unsafe_allow_html=True)
-    s_html = '<table class="mg-tbl"><thead><tr><th>Month</th><th>Avg Return</th><th>Std Dev</th><th>N</th><th>Hit Rate</th></tr></thead><tbody>'
+    s_html = '<table class="mg-tbl"><thead><tr><th class="lbl">Month</th><th>Avg Return</th><th>Std Dev</th><th>N</th><th>Hit Rate</th></tr></thead><tbody>'
     for _, row in seas['monthly'].iterrows():
         m_idx = int(row['month'])
         sub   = fund_df[fund_df['month'] == m_idx]['ret']
@@ -1513,7 +1511,7 @@ with tabs[13]:
         ('N Observations',      'n',        False, 0, False),
     ]
 
-    mp_html = '<table class="mg-tbl"><thead><tr><th>Metric</th>'
+    mp_html = '<table class="mg-tbl"><thead><tr><th class="lbl">Metric</th>'
     for lbl, _ in pstats:
         mp_html += f'<th>{lbl}</th>'
     mp_html += '</tr></thead><tbody>'
@@ -1545,10 +1543,10 @@ with tabs[14]:
         st.info("No macro event periods overlap with this fund's history.")
     else:
         bm_hdrs = f'<th>{bm1_name}</th><th>Spread</th><th>Protected?</th>' if bm1_df is not None else ''
-        ev_html = f'<table class="mg-tbl"><thead><tr><th>Event</th><th>Period</th><th>{fund_name}</th>{bm_hdrs}</tr></thead><tbody>'
+        ev_html = f'<table class="mg-tbl"><thead><tr><th class="lbl">Event</th><th class="lbl">Period</th><th>{fund_name}</th>{bm_hdrs}</tr></thead><tbody>'
         for ev in ev_rows:
             fc = 'pos' if ev['fund_ret'] >= 0 else 'neg'
-            ev_html += f'<tr><td><strong>{ev["name"]}</strong></td><td class="lbl">{ev["period"]}</td><td class="{fc}">{_fmt(ev["fund_ret"])}</td>'
+            ev_html += f'<tr><td class="lbl"><strong>{ev["name"]}</strong></td><td class="lbl">{ev["period"]}</td><td class="{fc}">{_fmt(ev["fund_ret"])}</td>'
             if ev['bm_ret'] is not None:
                 bc   = 'pos' if ev['bm_ret'] >= 0 else 'neg'
                 sc   = 'pos' if ev['spread'] >= 0 else 'neg'
@@ -1618,7 +1616,7 @@ with tabs[17]:
         )
         disp = disp[mask]
 
-    d_html = f'<table class="mg-tbl"><thead><tr><th>Date</th><th>{fund_name} Return</th><th></th></tr></thead><tbody>'
+    d_html = f'<table class="mg-tbl"><thead><tr><th class="lbl">Date</th><th>{fund_name} Return</th><th></th></tr></thead><tbody>'
     for r in disp.itertuples():
         bg    = 'background:#FFFBEE;' if r.flag else ''
         cls   = 'pos' if r.ret >= 0 else 'neg'
