@@ -5,3 +5,5 @@ numpy
 scipy
 openpyxl
 pdfplumber
+reportlab
+matplotlib

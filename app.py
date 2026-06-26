@@ -8,6 +8,8 @@ import hmac
 import numpy as np
 import pandas as pd
 import streamlit as st
+from report import build_report
+import re as _re
 
 from analytics import (
     geo_return, ann_vol, sharpe_with_rf, sortino_with_rf,
@@ -523,6 +525,7 @@ for k, v in {
     'parse_diag': None, 'bm_choice': 'MSCI World Hedged USD',
     'pdf_candidates': None, 'pdf_warns': None, 'pdf_sig': None,
     'pdf_meta': None, 'deck_meta': {},
+    'report_pdf': None, 'report_name': None,
     'hfrx_choice': None,
 }.items():
     if k not in st.session_state:
@@ -596,7 +599,7 @@ def _render_pdf_picker():
                     'fund_df': df,
                     'outliers_df': compute_outliers(df),
                     'fund_name': name,
-                    'deck_meta': st.session_state.get('pdf_meta') or {},
+                    'deck_meta': st.session_state.get('pdf_meta') or {}, 'report_pdf': None,
                     'parse_diag': {
                         'date_col': 'PDF deck', 'date_format': 'year \u00d7 month grid',
                         'ret_col': 'PDF deck', 'ret_format': 'percent',
@@ -682,7 +685,7 @@ if st.session_state['fund_df'] is None:
                     'outliers_df': compute_outliers(df),
                     'parse_diag': diag,
                     'fund_name': _name_from_file(up.name),
-                    'deck_meta': {},
+                    'deck_meta': {}, 'report_pdf': None,
                 })
                 st.rerun()
 
@@ -717,7 +720,7 @@ with c_up:
                     'outliers_df': compute_outliers(df2),
                     'parse_diag': diag2,
                     'fund_name': _name_from_file(new_up.name),
-                    'deck_meta': {},
+                    'deck_meta': {}, 'report_pdf': None,
                 })
                 st.rerun()
 
@@ -835,6 +838,29 @@ st.markdown(f"""
   </div>
 </div>
 """, unsafe_allow_html=True)
+
+
+# ─── REPORT ───────────────────────────────────────────────────────────────────
+
+_c_pdf, _c_dl, _ = st.columns([1.1, 1.1, 4])
+with _c_pdf:
+    if st.button("Generate PDF", type="primary"):
+        with st.spinner("Building report\u2026"):
+            try:
+                _safe = _re.sub(r'[^A-Za-z0-9]+', '_', str(fund_name)).strip('_') or 'Report'
+                _ym = f"{int(fund_df.iloc[-1]['year'])}-{int(fund_df.iloc[-1]['month']):02d}"
+                st.session_state['report_pdf'] = build_report(
+                    fund_df, fund_name, MSCI_DF, 'MSCI World Hedged',
+                    AGG_DF, bm3_df, bm3_name, meta=st.session_state.get('deck_meta'))
+                st.session_state['report_name'] = f"Argus_{_safe}_{_ym}.pdf"
+            except Exception as _e:
+                st.session_state['report_pdf'] = None
+                st.error(f"Report failed: {_e}")
+with _c_dl:
+    if st.session_state.get('report_pdf'):
+        st.download_button("Download PDF", st.session_state['report_pdf'],
+                           file_name=st.session_state.get('report_name', 'Argus_Report.pdf'),
+                           mime="application/pdf")
 
 
 # ─── TABS ─────────────────────────────────────────────────────────────────────
