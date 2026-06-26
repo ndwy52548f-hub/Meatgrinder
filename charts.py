@@ -469,22 +469,22 @@ def chart_regression(reg_result: dict, fund_name: str, bm_name: str) -> go.Figur
         hoverinfo='skip'
     ))
 
-    # Piecewise beta lines: β⁺ over BM-up months, β⁻ over BM-down months
+    # Continuous piecewise lines: both segments share the hinge intercept at x=0,
+    # so β⁺ (up) and β⁻ (down) meet at (0, α_pw).
     bu, bd = reg_result.get('beta_up'), reg_result.get('beta_dn')
+    a_pw = reg_result.get('alpha_pw', reg_result['alpha'])
     ux, uy = reg_result['up_x'], reg_result['up_y']
     dx, dy = reg_result['dn_x'], reg_result['dn_y']
     if bu is not None and len(ux) > 1:
-        a_up = float(np.mean(uy) - bu * np.mean(ux))
         xs = np.linspace(0.0, float(np.max(ux)), 50)
         fig.add_trace(go.Scatter(
-            x=xs, y=a_up + bu * xs, mode='lines',
+            x=xs, y=a_pw + bu * xs, mode='lines',
             line=dict(color=C['green'], width=2, dash='dash'),
             name=f'β⁺ = {bu:.2f}', hoverinfo='skip'))
     if bd is not None and len(dx) > 1:
-        a_dn = float(np.mean(dy) - bd * np.mean(dx))
         xs = np.linspace(float(np.min(dx)), 0.0, 50)
         fig.add_trace(go.Scatter(
-            x=xs, y=a_dn + bd * xs, mode='lines',
+            x=xs, y=a_pw + bd * xs, mode='lines',
             line=dict(color=C['red'], width=2, dash='dash'),
             name=f'β⁻ = {bd:.2f}', hoverinfo='skip'))
 

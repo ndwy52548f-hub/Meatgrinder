@@ -111,6 +111,74 @@ def fig_cumulative(fund_df, fund_name, series):
     return _img(fig)
 
 
+def _heat_hex(v, cap, pos=(26, 138, 80), neg=(204, 34, 34)):
+    if v is None:
+        return '#FFFFFF'
+    t = max(-1.0, min(1.0, v / cap))
+    a = 0.10 + 0.50 * abs(t)
+    base = pos if t >= 0 else neg
+    return '#%02X%02X%02X' % tuple(round(255 * (1 - a) + base[i] * a) for i in range(3))
+
+
+def calendar_table(fund_name, series):
+    """Multi-series monthly return track record with YTD — mirrors the dashboard
+    Calendar tab (green/red shading, year grouping)."""
+    def lut(d):
+        return {(int(r.year), int(r.month)): float(r.ret) for r in d.itertuples()}
+    luts = [(nm, lut(d)) for nm, d in series if d is not None]
+    years = sorted({int(r.year) for r in series[0][1].itertuples()})
+
+    def ytd(vals):
+        present = [v for v in vals if v is not None]
+        if not present:
+            return None
+        w = 1.0
+        for v in present:
+            w *= (1 + v / 100)
+        return (w - 1) * 100
+
+    header = ['', 'Series'] + MN + ['YTD']
+    data = [header]
+    style = [
+        ('BACKGROUND', (0, 0), (-1, 0), rlc.HexColor(TEAL)),
+        ('TEXTCOLOR', (0, 0), (-1, 0), rlc.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 6.5),
+        ('FONTNAME', (2, 1), (-1, -1), 'Courier'),
+        ('FONTNAME', (0, 1), (1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 6.3),
+        ('TEXTCOLOR', (0, 1), (-1, -1), rlc.HexColor(AXIS)),
+        ('ALIGN', (2, 0), (-1, -1), 'CENTER'),
+        ('ALIGN', (0, 0), (1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ('LEFTPADDING', (0, 0), (-1, -1), 2), ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+    ]
+    r = 0
+    for yi, yr in enumerate(years):
+        for si, (sname, L) in enumerate(luts):
+            r += 1
+            mvals = [L.get((yr, mo)) for mo in range(1, 13)]
+            cells = [f"{v:+.2f}" if v is not None else '' for v in mvals]
+            yv = ytd(mvals)
+            row = [str(yr) if si == 0 else '', sname] + cells + [f"{yv:+.2f}" if yv is not None else '']
+            data.append(row)
+            for ci, v in enumerate(mvals):
+                style.append(('BACKGROUND', (2 + ci, r), (2 + ci, r), rlc.HexColor(_heat_hex(v, 6.0))))
+            style.append(('BACKGROUND', (14, r), (14, r), rlc.HexColor(_heat_hex(yv, 20.0))))
+            style.append(('FONTNAME', (14, r), (14, r), 'Courier-Bold'))
+            if si == 0:
+                style.append(('FONTNAME', (0, r), (0, r), 'Helvetica-Bold'))
+                if yi > 0:
+                    style.append(('LINEABOVE', (0, r), (-1, r), 1.0, rlc.HexColor(TEAL)))
+    name_w = 1.15 * inch
+    yr_w = 0.30 * inch
+    mw = (USABLE_W - name_w - yr_w) / 13
+    t = Table(data, colWidths=[yr_w, name_w] + [mw] * 13, repeatRows=1)
+    t.setStyle(TableStyle(style))
+    return t
+
+
 def fig_calendar(fund_df):
     piv = fund_df.pivot_table(index='year', columns='month', values='ret')
     piv = piv.reindex(columns=range(1, 13))
@@ -170,10 +238,16 @@ def fig_regression(fund_df, series):
         if not reg:
             continue
         x, y = reg['x'], reg['y']
-        ax.scatter(x, y, s=10, color=TEAL, alpha=0.6, edgecolors='none')
-        xs = np.linspace(x.min(), x.max(), 50)
-        ax.plot(xs, reg['alpha'] + reg['beta'] * xs, color=REDc, lw=1.3)
+        up = x > 0
+        ax.scatter(x[up], y[up], s=9, color=GREENc, alpha=0.65, edgecolors='none')
+        ax.scatter(x[~up], y[~up], s=9, color=REDc, alpha=0.65, edgecolors='none')
         ax.axhline(0, color=MUTED, lw=0.6); ax.axvline(0, color=MUTED, lw=0.6)
+        xs = np.linspace(x.min(), x.max(), 50)
+        ax.plot(xs, reg['alpha'] + reg['beta'] * xs, color=AXIS, lw=1.4)
+        a_pw = reg.get('alpha_pw', reg['alpha'])
+        xu = np.linspace(0, x.max(), 30); xd = np.linspace(x.min(), 0, 30)
+        ax.plot(xu, a_pw + reg['beta_up'] * xu, color=GREENc, lw=1.2, ls='--')
+        ax.plot(xd, a_pw + reg['beta_dn'] * xd, color=REDc, lw=1.2, ls='--')
         ax.set_title(f"{nm}\n\u03b2={reg['beta']:.2f}  \u03b1={reg['alpha']:.2f}%  R\u00b2={reg['r2']:.2f}", fontsize=7.5)
         _pct(ax, 'x'); _pct(ax, 'y')
     fig.tight_layout()
@@ -410,6 +484,65 @@ def _cover(fund_name, span, gen_date, meta):
 
 # ── main entry ────────────────────────────────────────────────────────────────
 
+def _drawdown_tables(fund_df):
+    """Largest/Longest/Mean/Median analysis + top episodes — mirrors the dashboard."""
+    eps = top_drawdowns(fund_df)
+    if not eps:
+        return []
+    import datetime as _dt
+
+    def _pmd(s):
+        if not s or s in ('Start', 'Ongoing'):
+            return None
+        try:
+            mo, yr = s.split()
+            return _dt.date(int(yr), MN.index(mo) + 1, 1)
+        except Exception:
+            return None
+
+    def _avg_date(strs, med=False):
+        ords = [d.toordinal() for d in (_pmd(s) for s in strs) if d]
+        if not ords:
+            return '\u2013'
+        v = np.median(ords) if med else np.mean(ords)
+        d = _dt.date.fromordinal(int(round(v)))
+        return f"{MN[d.month - 1]} {d.year}"
+
+    def _dur(e, k):
+        return str(e[k]) if e[k] is not None else 'Ongoing'
+
+    largest = eps[0]
+    longest = max(eps, key=lambda e: e['total_months'] if e['total_months'] is not None else e['peak_to_trough'])
+    depths = [abs(e['drawdown']) for e in eps]
+    p2t = [e['peak_to_trough'] for e in eps]
+    t2r = [e['trough_to_recovery'] for e in eps if e['trough_to_recovery'] is not None]
+    p2r = [e['total_months'] for e in eps if e['total_months'] is not None]
+
+    analysis = [
+        ['Drawdown %', f"{abs(largest['drawdown']):.2f}", f"{abs(longest['drawdown']):.2f}", f"{np.mean(depths):.2f}", f"{np.median(depths):.2f}"],
+        ['Peak', largest['peak_date'], longest['peak_date'], _avg_date([e['peak_date'] for e in eps]), _avg_date([e['peak_date'] for e in eps], med=True)],
+        ['Trough', largest['trough_date'], longest['trough_date'], _avg_date([e['trough_date'] for e in eps]), _avg_date([e['trough_date'] for e in eps], med=True)],
+        ['Recovery', largest['recovery_date'], longest['recovery_date'], _avg_date([e['recovery_date'] for e in eps]), _avg_date([e['recovery_date'] for e in eps], med=True)],
+        ['Peak to Trough (mo)', _dur(largest, 'peak_to_trough'), _dur(longest, 'peak_to_trough'), f"{np.mean(p2t):.2f}", f"{np.median(p2t):.2f}"],
+        ['Trough to Recovery (mo)', _dur(largest, 'trough_to_recovery'), _dur(longest, 'trough_to_recovery'), (f"{np.mean(t2r):.2f}" if t2r else '\u2013'), (f"{np.median(t2r):.2f}" if t2r else '\u2013')],
+        ['Peak to Recovery (mo)', _dur(largest, 'total_months'), _dur(longest, 'total_months'), (f"{np.mean(p2r):.2f}" if p2r else '\u2013'), (f"{np.median(p2r):.2f}" if p2r else '\u2013')],
+    ]
+    ep_rows = []
+    for i, e in enumerate(eps):
+        tr = f"{e['trough_to_recovery']}m" if e['trough_to_recovery'] is not None else 'Ongoing'
+        tot = f"{e['total_months']}m" if e['total_months'] is not None else 'Ongoing'
+        ep_rows.append([str(i + 1), f"{e['drawdown']:.2f}%", e['peak_date'], e['trough_date'],
+                        e['recovery_date'], f"{e['peak_to_trough']}m", tr, tot])
+    return [
+        Spacer(1, 6),
+        Paragraph("Drawdown Analysis", _SUB),
+        _grid_table(['', 'Largest', 'Longest', 'Mean', 'Median'], analysis),
+        Spacer(1, 8),
+        Paragraph("Top Drawdown Episodes", _SUB),
+        _grid_table(['#', 'Drawdown', 'Peak', 'Trough', 'Recovery', 'Pk\u2192Tr', 'Tr\u2192Rec', 'Total'], ep_rows),
+    ]
+
+
 def build_report(fund_df, fund_name, mkt_df, mkt_name, agg_df, bm3_df, bm3_name, meta=None):
     meta = meta or {}
     fd = fund_df.reset_index(drop=True)
@@ -447,8 +580,12 @@ def build_report(fund_df, fund_name, mkt_df, mkt_name, agg_df, bm3_df, bm3_name,
     # Performance
     story.append(Paragraph("Performance", _H))
     story.append(KeepTogether([Paragraph("Cumulative Growth of $100", _SUB), fig_cumulative(fund_df, fund_name, bms)]))
-    story.append(KeepTogether([Paragraph("Calendar Returns (%)", _SUB), fig_calendar(fund_df)]))
+    story.append(Paragraph("Monthly Return Track Record (%)", _SUB))
+    story.append(calendar_table(fund_name, [(fund_name, fund_df), ('MSCI World Hdg', mkt_df),
+                                            ('Bloomberg Agg', agg_df), (bm3_name, bm3_df)]))
+    story.append(Spacer(1, 8))
     story.append(KeepTogether([Paragraph("Drawdowns", _SUB), fig_drawdowns(fund_df)]))
+    story += _drawdown_tables(fund_df)
 
     # Risk & significance
     story.append(PageBreak())

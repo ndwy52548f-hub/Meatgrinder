@@ -526,21 +526,19 @@ def piecewise_beta_regression(fund_df: pd.DataFrame, bm_df: pd.DataFrame) -> Opt
     alpha_ci = (alpha - t_crit*se_alpha, alpha + t_crit*se_alpha) if not np.isnan(t_crit) else (np.nan, np.nan)
     beta_ci  = (beta  - t_crit*se_beta,  beta  + t_crit*se_beta)  if not np.isnan(t_crit) else (np.nan, np.nan)
 
-    # Piecewise betas
+    # Continuous piecewise (hinge) regression with the knot at x = 0:
+    #   y = alpha_pw + beta_dn * min(x, 0) + beta_up * max(x, 0)
+    # A single intercept makes both segments meet at (0, alpha_pw).
+    xneg = np.minimum(x, 0.0)
+    xpos = np.maximum(x, 0.0)
+    try:
+        coef, *_ = np.linalg.lstsq(np.column_stack([np.ones(n), xneg, xpos]), y, rcond=None)
+        alpha_pw, beta_dn, beta_up = float(coef[0]), float(coef[1]), float(coef[2])
+    except Exception:
+        alpha_pw, beta_dn, beta_up = alpha, beta, beta
+    convexity = (beta_up - beta_dn)
     up_mask = x > 0
     dn_mask = x <= 0
-
-    def piecewise_beta(xp, yp):
-        if len(xp) < 3:
-            return None
-        pmx, pmy = np.mean(xp), np.mean(yp)
-        pc = np.sum((xp-pmx)*(yp-pmy)) / (len(xp)-1)
-        pv = np.sum((xp-pmx)**2) / (len(xp)-1)
-        return 0.0 if pv == 0 else pc/pv
-
-    beta_up = piecewise_beta(x[up_mask], y[up_mask])
-    beta_dn = piecewise_beta(x[dn_mask], y[dn_mask])
-    convexity = (beta_up - beta_dn) if (beta_up is not None and beta_dn is not None) else None
 
     return {
         'n': n,
@@ -548,6 +546,7 @@ def piecewise_beta_regression(fund_df: pd.DataFrame, bm_df: pd.DataFrame) -> Opt
         'se_beta': se_beta, 'se_alpha': se_alpha,
         't_beta': t_beta, 't_alpha': t_alpha,
         'alpha_ci': alpha_ci, 'beta_ci': beta_ci,
+        'alpha_pw': alpha_pw,
         'beta_up': beta_up, 'beta_dn': beta_dn, 'convexity': convexity,
         'x': x, 'y': y,
         'up_x': x[up_mask], 'up_y': y[up_mask],
