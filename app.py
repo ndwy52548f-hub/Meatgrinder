@@ -73,8 +73,9 @@ st.markdown("""
   gap: 24px !important;
 }
 
-/* Let columns shrink instead of wrapping to a new row */
-[data-testid="stColumn"], [data-testid="column"] { min-width: 0 !important; }
+/* Keep column rows on a single line; let columns shrink to fit */
+[data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; }
+[data-testid="stHorizontalBlock"] > div { min-width: 0 !important; }
 
 /* Input section header */
 .mg-input-hdr {
