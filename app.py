@@ -85,7 +85,7 @@ st.markdown("""
   color: #006B7A;
   letter-spacing: -0.5px;
   background: #FFFFFF;
-  padding: 10px 40px 0;
+  padding: 10px 0 0;
 }
 
 /* Outlier toggle — teal active state to match the buttons; tinted off-state */
@@ -179,7 +179,7 @@ label[data-testid="stWidgetLabel"] p {
 .mg-topbar {
   background: #006B7A;
   height: 54px;
-  padding: 0 40px;
+  padding: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -768,7 +768,7 @@ def _set_window(months=None, ytd=False):
     st.session_state['report_pdf'] = None
 
 
-st.markdown('<div class="mg-input-hdr" style="font-size:15px;padding:0 40px;">Analysis Period</div>',
+st.markdown('<div class="mg-input-hdr" style="font-size:15px;padding:0;">Analysis Period</div>',
             unsafe_allow_html=True)
 _presets = [('Max', dict()), ('10Y', dict(months=120)), ('5Y', dict(months=60)),
             ('3Y', dict(months=36)), ('1Y', dict(months=12)), ('YTD', dict(ytd=True))]
