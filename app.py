@@ -66,11 +66,10 @@ st.markdown("""
 [data-testid="stSidebar"]        { display: none !important; }
 [data-testid="collapsedControl"] { display: none !important; }
 
-/* ── Controls area — give it a white strip ── */
+/* ── Controls area — white strip, full width ── */
 [data-testid="stHorizontalBlock"]:first-of-type {
   background: #FFFFFF;
-  padding: 2px 40px 6px;
-  border-bottom: 3px solid #006B7A;
+  padding: 6px 0;
   gap: 24px !important;
 }
 
@@ -527,6 +526,7 @@ for k, v in {
     'pdf_candidates': None, 'pdf_warns': None, 'pdf_sig': None,
     'pdf_meta': None, 'deck_meta': {},
     'report_pdf': None, 'report_name': None,
+    'win_start': None, 'win_end': None, 'excl_extremes': False,
     'hfrx_choice': None,
 }.items():
     if k not in st.session_state:
@@ -745,14 +745,81 @@ bm3_df = HFRX_INDICES[bm3_name]
 _render_pdf_picker()
 
 
+# ─── ANALYSIS PERIOD ──────────────────────────────────────────────────────────
+
+_raw_all = st.session_state['fund_df']
+_mkeys = [(int(r.year), int(r.month)) for r in _raw_all.sort_values(['year', 'month']).itertuples()]
+_mlabels = [f"{MN[m - 1]} {y}" for (y, m) in _mkeys]
+if st.session_state.get('win_start') not in _mkeys:
+    st.session_state['win_start'] = _mkeys[0]
+if st.session_state.get('win_end') not in _mkeys:
+    st.session_state['win_end'] = _mkeys[-1]
+
+
+def _set_window(months=None, ytd=False):
+    end = _mkeys[-1]
+    if ytd:
+        start = next((k for k in _mkeys if k[0] == end[0]), _mkeys[0])
+    elif months is None:
+        start = _mkeys[0]
+    else:
+        start = _mkeys[max(0, len(_mkeys) - months)]
+    st.session_state['win_start'] = start
+    st.session_state['win_end'] = end
+    st.session_state['report_pdf'] = None
+
+
+st.markdown('<div class="mg-input-hdr" style="font-size:15px;padding-top:6px;">Analysis Period</div>',
+            unsafe_allow_html=True)
+_p = st.columns([1.5, 1.5, 0.7, 0.7, 0.7, 0.7, 0.7, 0.8, 1.9])
+with _p[0]:
+    _s_lab = st.selectbox("Start", _mlabels, index=_mkeys.index(st.session_state['win_start']))
+with _p[1]:
+    _e_lab = st.selectbox("End", _mlabels, index=_mkeys.index(st.session_state['win_end']))
+st.session_state['win_start'] = _mkeys[_mlabels.index(_s_lab)]
+st.session_state['win_end'] = _mkeys[_mlabels.index(_e_lab)]
+_presets = [('Max', dict()), ('10Y', dict(months=120)), ('5Y', dict(months=60)),
+            ('3Y', dict(months=36)), ('1Y', dict(months=12)), ('YTD', dict(ytd=True))]
+for _col, (_lbl, _kw) in zip(_p[2:8], _presets):
+    with _col:
+        st.markdown(_ALIGN, unsafe_allow_html=True)
+        if st.button(_lbl, key=f"preset_{_lbl}", use_container_width=True):
+            _set_window(**_kw)
+            st.rerun()
+with _p[8]:
+    st.markdown(_ALIGN, unsafe_allow_html=True)
+    _xx = st.toggle("Exclude best/worst month", value=st.session_state['excl_extremes'])
+    if _xx != st.session_state['excl_extremes']:
+        st.session_state['excl_extremes'] = _xx
+        st.session_state['report_pdf'] = None
+
+
 # ─── RESOLVE DATA ─────────────────────────────────────────────────────────────
 
-fund_df_raw = st.session_state['fund_df']
+_win_s, _win_e = st.session_state['win_start'], st.session_state['win_end']
+if _win_s > _win_e:
+    _win_s, _win_e = _win_e, _win_s
+_full_n = len(_raw_all)
+_windowed = _raw_all[_raw_all.apply(
+    lambda r: _win_s <= (int(r['year']), int(r['month'])) <= _win_e, axis=1)].copy()
+if st.session_state['excl_extremes'] and len(_windowed) > 2:
+    _windowed = _windowed.drop([_windowed['ret'].idxmax(), _windowed['ret'].idxmin()])
+fund_df_raw = _windowed.sort_values(['year', 'month']).reset_index(drop=True)
+
 outliers_df = st.session_state['outliers_df']
 diag        = st.session_state.get('parse_diag') or {}
 fund_name   = st.session_state['fund_name']
 trimmed     = st.session_state['trimmed']
 bm_choice   = st.session_state['bm_choice']
+_win_active = (len(fund_df_raw) != _full_n)
+_scope_sig = (_win_s, _win_e, st.session_state['excl_extremes'], trimmed,
+              st.session_state['fund_name'], st.session_state.get('hfrx_choice'))
+if st.session_state.get('win_sig') != _scope_sig:
+    st.session_state['win_sig'] = _scope_sig
+    st.session_state['report_pdf'] = None
+st.caption(f"Analysis window: {MN[_win_s[1]-1]} {_win_s[0]} \u2013 {MN[_win_e[1]-1]} {_win_e[0]} "
+           f"\u00b7 {len(fund_df_raw)} of {_full_n} months"
+           + ("  \u00b7  best/worst month excluded" if st.session_state['excl_extremes'] else ""))
 
 if bm_choice == 'MSCI World Hedged USD':
     bm1_df, bm1_name = MSCI_DF, 'MSCI World Hdg'
@@ -907,26 +974,25 @@ with tabs[18]:
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tabs[0]:
-    with st.container(border=True):
-        _c_pdf, _c_dl, _ = st.columns([1.1, 1.1, 4])
-        with _c_pdf:
-            if st.button("Generate PDF", type="primary"):
-                with st.spinner("Building report\u2026"):
-                    try:
-                        _safe = _re.sub(r'[^A-Za-z0-9]+', '_', str(fund_name)).strip('_') or 'Report'
-                        _ym = f"{int(fund_df.iloc[-1]['year'])}-{int(fund_df.iloc[-1]['month']):02d}"
-                        st.session_state['report_pdf'] = build_report(
-                            fund_df, fund_name, MSCI_DF, 'MSCI World Hedged',
-                            AGG_DF, bm3_df, bm3_name, meta=st.session_state.get('deck_meta'))
-                        st.session_state['report_name'] = f"Argus_{_safe}_{_ym}.pdf"
-                    except Exception as _e:
-                        st.session_state['report_pdf'] = None
-                        st.error(f"Report failed: {_e}")
-        with _c_dl:
-            if st.session_state.get('report_pdf'):
-                st.download_button("Download PDF", st.session_state['report_pdf'],
-                                   file_name=st.session_state.get('report_name', 'Argus_Report.pdf'),
-                                   mime="application/pdf")
+    _c_pdf, _c_dl, _ = st.columns([1.1, 1.1, 4])
+    with _c_pdf:
+        if st.button("Generate PDF", type="primary"):
+            with st.spinner("Building report\u2026"):
+                try:
+                    _safe = _re.sub(r'[^A-Za-z0-9]+', '_', str(fund_name)).strip('_') or 'Report'
+                    _ym = f"{int(fund_df.iloc[-1]['year'])}-{int(fund_df.iloc[-1]['month']):02d}"
+                    st.session_state['report_pdf'] = build_report(
+                        fund_df, fund_name, MSCI_DF, 'MSCI World Hedged',
+                        AGG_DF, bm3_df, bm3_name, meta=st.session_state.get('deck_meta'))
+                    st.session_state['report_name'] = f"Argus_{_safe}_{_ym}.pdf"
+                except Exception as _e:
+                    st.session_state['report_pdf'] = None
+                    st.error(f"Report failed: {_e}")
+    with _c_dl:
+        if st.session_state.get('report_pdf'):
+            st.download_button("Download PDF", st.session_state['report_pdf'],
+                               file_name=st.session_state.get('report_name', 'Argus_Report.pdf'),
+                               mime="application/pdf")
     for _head, _body in build_exec_summary(fund_df, fund_name, MSCI_DF, 'MSCI World Hdg',
                                            AGG_DF, bm3_df, bm3_name,
                                            meta=st.session_state.get('deck_meta')):
