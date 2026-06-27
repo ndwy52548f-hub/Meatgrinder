@@ -704,7 +704,7 @@ if _hfrx_cur not in _hfrx_names:
     _hfrx_cur = _hfrx_names[0]
 
 _ALIGN = '<div style="height:24px;"></div>'   # drops buttons to the input baseline
-c_up, c_fund, c_hfrx, c_tog, _pad = st.columns([0.95, 1.5, 1.55, 1.35, 0.65])
+c_up, c_fund, c_hfrx, _pad = st.columns([0.95, 1.7, 1.7, 1.3])
 
 with c_up:
     new_up = st.file_uploader("Upload Fund Data", type=['csv','xlsx','xls','pdf'])
@@ -733,11 +733,6 @@ with c_hfrx:
     st.session_state['hfrx_choice'] = st.selectbox(
         "Hedge Fund Index", _hfrx_names,
         index=_hfrx_names.index(_hfrx_cur), key='hfrx_sel')
-
-with c_tog:
-    st.markdown(_ALIGN, unsafe_allow_html=True)
-    tr = st.toggle("Exclude ≥3σ Outliers", value=st.session_state['trimmed'])
-    st.session_state['trimmed'] = tr
 
 bm3_name = st.session_state['hfrx_choice']
 bm3_df = HFRX_INDICES[bm3_name]
@@ -771,7 +766,7 @@ def _set_window(months=None, ytd=False):
 
 st.markdown('<div class="mg-input-hdr" style="font-size:15px;padding-top:6px;">Analysis Period</div>',
             unsafe_allow_html=True)
-_p = st.columns([1.5, 1.5, 0.7, 0.7, 0.7, 0.7, 0.7, 0.8, 1.9])
+_p = st.columns([1.4, 1.4, 0.6, 0.6, 0.6, 0.6, 0.6, 0.7, 1.7, 1.6])
 with _p[0]:
     _s_lab = st.selectbox("Start", _mlabels, index=_mkeys.index(st.session_state['win_start']))
 with _p[1]:
@@ -792,6 +787,10 @@ with _p[8]:
     if _xx != st.session_state['excl_extremes']:
         st.session_state['excl_extremes'] = _xx
         st.session_state['report_pdf'] = None
+with _p[9]:
+    st.markdown(_ALIGN, unsafe_allow_html=True)
+    st.session_state['trimmed'] = st.toggle("Exclude \u22653\u03c3 outliers",
+                                            value=st.session_state['trimmed'])
 
 
 # ─── RESOLVE DATA ─────────────────────────────────────────────────────────────
