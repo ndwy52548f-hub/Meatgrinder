@@ -764,39 +764,33 @@ def _set_window(months=None, ytd=False):
     st.session_state['report_pdf'] = None
 
 
-st.markdown('<div class="mg-input-hdr" style="font-size:15px;padding:0 40px 0;">Analysis Period</div>',
+st.markdown('<div class="mg-input-hdr" style="font-size:15px;padding:0 40px;">Analysis Period</div>',
             unsafe_allow_html=True)
 _presets = [('Max', dict()), ('10Y', dict(months=120)), ('5Y', dict(months=60)),
             ('3Y', dict(months=36)), ('1Y', dict(months=12)), ('YTD', dict(ytd=True))]
-_g = st.columns([2.8, 4.6, 0.2, 4.0])
-with _g[0]:
-    _d = st.columns(2)
-    with _d[0]:
-        _s_lab = st.selectbox("Start", _mlabels, index=_mkeys.index(st.session_state['win_start']))
-    with _d[1]:
-        _e_lab = st.selectbox("End", _mlabels, index=_mkeys.index(st.session_state['win_end']))
+_r1 = st.columns([1.6, 1.6, 0.5, 2.15, 2.15])
+with _r1[0]:
+    _s_lab = st.selectbox("Start", _mlabels, index=_mkeys.index(st.session_state['win_start']))
+with _r1[1]:
+    _e_lab = st.selectbox("End", _mlabels, index=_mkeys.index(st.session_state['win_end']))
 st.session_state['win_start'] = _mkeys[_mlabels.index(_s_lab)]
 st.session_state['win_end'] = _mkeys[_mlabels.index(_e_lab)]
-with _g[1]:
-    _pc = st.columns(6)
-    for _col, (_lbl, _kw) in zip(_pc, _presets):
-        with _col:
-            st.markdown(_ALIGN, unsafe_allow_html=True)
-            if st.button(_lbl, key=f"preset_{_lbl}", use_container_width=True):
-                _set_window(**_kw)
-                st.rerun()
-with _g[3]:
-    _tc = st.columns(2)
-    with _tc[0]:
-        st.markdown(_ALIGN, unsafe_allow_html=True)
-        _xx = st.toggle("Exclude best/worst", value=st.session_state['excl_extremes'])
-        if _xx != st.session_state['excl_extremes']:
-            st.session_state['excl_extremes'] = _xx
-            st.session_state['report_pdf'] = None
-    with _tc[1]:
-        st.markdown(_ALIGN, unsafe_allow_html=True)
-        st.session_state['trimmed'] = st.toggle("Exclude \u22653\u03c3 outliers",
-                                                value=st.session_state['trimmed'])
+with _r1[3]:
+    st.markdown(_ALIGN, unsafe_allow_html=True)
+    _xx = st.toggle("Exclude best/worst", value=st.session_state['excl_extremes'])
+    if _xx != st.session_state['excl_extremes']:
+        st.session_state['excl_extremes'] = _xx
+        st.session_state['report_pdf'] = None
+with _r1[4]:
+    st.markdown(_ALIGN, unsafe_allow_html=True)
+    st.session_state['trimmed'] = st.toggle("Exclude \u22653\u03c3 outliers",
+                                            value=st.session_state['trimmed'])
+_r2 = st.columns(6)
+for _col, (_lbl, _kw) in zip(_r2, _presets):
+    with _col:
+        if st.button(_lbl, key=f"preset_{_lbl}", use_container_width=True):
+            _set_window(**_kw)
+            st.rerun()
 
 
 # ─── RESOLVE DATA ─────────────────────────────────────────────────────────────
