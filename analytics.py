@@ -558,14 +558,21 @@ def piecewise_beta_regression(fund_df: pd.DataFrame, bm_df: pd.DataFrame) -> Opt
 # ─── AUTOCORRELATION ──────────────────────────────────────────────────────────
 
 def acf(rets: np.ndarray, max_lag: int = 12) -> list[float]:
-    """Return autocorrelation at lags 1..max_lag."""
+    """Return autocorrelation at lags 1..max_lag. Lags >= n are returned as 0
+    (not enough data), so short analysis windows don't break."""
+    rets = np.asarray(rets, dtype=float)
     n = len(rets)
+    if n < 2:
+        return [0.0] * max_lag
     m = np.mean(rets)
     v = np.sum((rets - m)**2) / n
     result = []
     for lag in range(1, max_lag + 1):
-        cov = np.sum((rets[lag:] - m) * (rets[:n-lag] - m)) / n
-        result.append(0.0 if v == 0 else cov / v)
+        if lag >= n or v == 0:
+            result.append(0.0)
+        else:
+            cov = np.sum((rets[lag:] - m) * (rets[:n-lag] - m)) / n
+            result.append(cov / v)
     return result
 
 
