@@ -841,6 +841,15 @@ if trimmed and outliers_df is not None and len(outliers_df) > 0:
 else:
     fund_df = fund_df_raw
 
+_MIN_MONTHS = 12
+if len(fund_df) < _MIN_MONTHS:
+    st.warning(
+        f"The selected analysis window leaves **{len(fund_df)}** month"
+        f"{'s' if len(fund_df) != 1 else ''} of data. Argus needs at least "
+        f"**{_MIN_MONTHS} months** to compute reliable analytics. "
+        f"Widen the date range, or turn off the exclusions, in the Analysis Period controls above.")
+    st.stop()
+
 
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
 
@@ -1473,10 +1482,10 @@ with tabs[9]:
     c_bw_l, c_bw_r = st.columns(2, gap="large")
     with c_bw_l:
         st.markdown('<div class="mg-sh">Market\'s Worst 5 Months</div>', unsafe_allow_html=True)
-        st.plotly_chart(chart_best_worst(fund_df, MSCI_DF, 'MSCI World Hdg', AGG_DF, 'Bloomberg Agg', 5, worst=True, bm3_df=bm3_df, bm3_name=bm3_name, show_legend=True, fund_name='Strategy'), use_container_width=True, config={'displayModeBar': False})
+        st.plotly_chart(chart_best_worst(fund_df, MSCI_DF, 'MSCI World Hdg', AGG_DF, 'Bloomberg Agg', 5, worst=True, bm3_df=bm3_df, bm3_name=bm3_name, show_legend=True, fund_name='Strategy'), use_container_width=True, config={'displayModeBar': False}, key='cw_worst')
     with c_bw_r:
         st.markdown('<div class="mg-sh">Market\'s Best 5 Months</div>', unsafe_allow_html=True)
-        st.plotly_chart(chart_best_worst(fund_df, MSCI_DF, 'MSCI World Hdg', AGG_DF, 'Bloomberg Agg', 5, worst=False, bm3_df=bm3_df, bm3_name=bm3_name, show_legend=False, fund_name='Strategy'), use_container_width=True, config={'displayModeBar': False})
+        st.plotly_chart(chart_best_worst(fund_df, MSCI_DF, 'MSCI World Hdg', AGG_DF, 'Bloomberg Agg', 5, worst=False, bm3_df=bm3_df, bm3_name=bm3_name, show_legend=False, fund_name='Strategy'), use_container_width=True, config={'displayModeBar': False}, key='cw_best')
 
     st.markdown('<div class="mg-sh" style="margin-top:14px;">Up / Down Capture</div>', unsafe_allow_html=True)
     st.markdown('<div class="mg-note">Average monthly return in up-market vs. down-market months. Up and down months are defined by the market (MSCI World Hedged) being positive or negative.</div>', unsafe_allow_html=True)
