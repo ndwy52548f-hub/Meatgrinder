@@ -138,6 +138,15 @@ section[data-testid="stFileUploaderDropzone"] {
   color: #006B7A !important;
 }
 
+/* Window-change toast — yellow for visibility */
+[data-testid="stToast"] {
+  background-color: #FFE9A8 !important;
+  color: #5C4400 !important;
+  border: 1.5px solid #E0A800 !important;
+  font-weight: 600 !important;
+}
+[data-testid="stToast"] * { color: #5C4400 !important; }
+
 /* ── Widget label text ── */
 label[data-testid="stWidgetLabel"] p {
   font-family: 'Inter', sans-serif !important;
@@ -852,7 +861,7 @@ if st.session_state.get('win_sig') != _scope_sig:
     if _prev_sig is not None:
         _tlabel = _active_preset or 'Custom'
         st.toast(f"{_tlabel} \u00b7 {MN[_win_s[1]-1]} {_win_s[0]} \u2013 "
-                 f"{MN[_win_e[1]-1]} {_win_e[0]} \u00b7 {len(fund_df_raw)} months")
+                 f"{MN[_win_e[1]-1]} {_win_e[0]} \u00b7 {len(fund_df_raw)} months", icon="\U0001F4C5")
 
 if bm_choice == 'MSCI World Hedged USD':
     bm1_df, bm1_name = MSCI_DF, 'MSCI World Hdg'
