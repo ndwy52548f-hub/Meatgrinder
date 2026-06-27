@@ -111,19 +111,31 @@ section[data-testid="stFileUploaderDropzone"] {
 
 /* Buttons — solid teal, thick border, sized to content */
 [data-testid="stButton"] button {
-  background: #006B7A !important;
-  color: #FFFFFF !important;
-  border: 2px solid #005561 !important;
   border-radius: 6px !important;
   font-family: 'Inter', sans-serif !important;
   font-weight: 600 !important;
   font-size: 13px !important;
   padding: 8px 24px !important;
 }
-[data-testid="stButton"] button:hover {
+[data-testid="stButton"] button[kind="primary"] {
+  background: #006B7A !important;
+  color: #FFFFFF !important;
+  border: 2px solid #005561 !important;
+}
+[data-testid="stButton"] button[kind="primary"]:hover {
   background: #005561 !important;
   border-color: #003E47 !important;
   color: #FFFFFF !important;
+}
+[data-testid="stButton"] button[kind="secondary"] {
+  background: #FFFFFF !important;
+  color: #006B7A !important;
+  border: 2px solid #9CC3C9 !important;
+}
+[data-testid="stButton"] button[kind="secondary"]:hover {
+  background: #EAF3F4 !important;
+  border-color: #006B7A !important;
+  color: #006B7A !important;
 }
 
 /* ── Widget label text ── */
@@ -789,10 +801,26 @@ with _r1[3]:
     st.markdown(_ALIGN, unsafe_allow_html=True)
     st.session_state['trimmed'] = st.toggle("Exclude \u22653\u03c3 outliers",
                                             value=st.session_state['trimmed'])
+
+
+def _preset_window(kw):
+    end = _mkeys[-1]
+    if kw.get('ytd'):
+        start = next((k for k in _mkeys if k[0] == end[0]), _mkeys[0])
+    elif kw.get('months') is None:
+        start = _mkeys[0]
+    else:
+        start = _mkeys[max(0, len(_mkeys) - kw['months'])]
+    return (start, end)
+
+
+_cur_win = (st.session_state['win_start'], st.session_state['win_end'])
+_active_preset = next((lbl for lbl, kw in _presets if _preset_window(kw) == _cur_win), None)
 _r2 = st.columns(6)
 for _col, (_lbl, _kw) in zip(_r2, _presets):
     with _col:
-        if st.button(_lbl, key=f"preset_{_lbl}", use_container_width=True):
+        if st.button(_lbl, key=f"preset_{_lbl}", use_container_width=True,
+                     type=("primary" if _lbl == _active_preset else "secondary")):
             _set_window(**_kw)
             st.rerun()
 
@@ -818,11 +846,13 @@ _win_active = (len(fund_df_raw) != _full_n)
 _scope_sig = (_win_s, _win_e, st.session_state['excl_extremes'], trimmed,
               st.session_state['fund_name'], st.session_state.get('hfrx_choice'))
 if st.session_state.get('win_sig') != _scope_sig:
+    _prev_sig = st.session_state.get('win_sig')
     st.session_state['win_sig'] = _scope_sig
     st.session_state['report_pdf'] = None
-st.caption(f"Analysis window: {MN[_win_s[1]-1]} {_win_s[0]} \u2013 {MN[_win_e[1]-1]} {_win_e[0]} "
-           f"\u00b7 {len(fund_df_raw)} of {_full_n} months"
-           + ("  \u00b7  best/worst month excluded" if st.session_state['excl_extremes'] else ""))
+    if _prev_sig is not None:
+        _tlabel = _active_preset or 'Custom'
+        st.toast(f"{_tlabel} \u00b7 {MN[_win_s[1]-1]} {_win_s[0]} \u2013 "
+                 f"{MN[_win_e[1]-1]} {_win_e[0]} \u00b7 {len(fund_df_raw)} months")
 
 if bm_choice == 'MSCI World Hedged USD':
     bm1_df, bm1_name = MSCI_DF, 'MSCI World Hdg'
@@ -849,6 +879,21 @@ if len(fund_df) < _MIN_MONTHS:
         f"**{_MIN_MONTHS} months** to compute reliable analytics. "
         f"Widen the date range, or turn off the exclusions, in the Analysis Period controls above.")
     st.stop()
+
+_band_parts = [f"{MN[_win_s[1]-1]} {_win_s[0]} \u2013 {MN[_win_e[1]-1]} {_win_e[0]}",
+               f"{len(fund_df)} months"]
+if _active_preset:
+    _band_parts.insert(0, _active_preset)
+if st.session_state['excl_extremes']:
+    _band_parts.append("best/worst excluded")
+if trimmed:
+    _band_parts.append("\u22653\u03c3 excluded")
+st.markdown(
+    f'<div style="border:1.5px solid #006B7A;background:#EAF3F4;color:#004A54;'
+    f'font-family:Inter,sans-serif;font-weight:700;font-size:13px;letter-spacing:.2px;'
+    f'padding:7px 14px;border-radius:6px;margin:8px 0 4px;display:inline-block;">'
+    f'Showing&nbsp; {"&nbsp;&middot;&nbsp; ".join(_band_parts)}</div>',
+    unsafe_allow_html=True)
 
 
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
