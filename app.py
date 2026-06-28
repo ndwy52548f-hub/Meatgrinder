@@ -55,7 +55,7 @@ st.markdown("""
 }
 .main .block-container,
 [data-testid="stMainBlockContainer"] {
-  padding: 0 28px 80px 28px !important;
+  padding: 0 40px 80px 40px !important;
   max-width: 100% !important;
 }
 
@@ -200,7 +200,7 @@ label[data-testid="stWidgetLabel"] p {
 /* Top bar */
 .mg-topbar {
   background: #006B7A;
-  height: 54px;
+  height: 76px;
   padding: 0;
   display: flex;
   align-items: center;
@@ -209,9 +209,9 @@ label[data-testid="stWidgetLabel"] p {
 }
 .mg-topbar .brand {
   font-family: 'Inter', sans-serif;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 5px;
+  font-size: 38px;
+  font-weight: 800;
+  letter-spacing: 4px;
   color: #FFFFFF;
   text-transform: uppercase;
 }
