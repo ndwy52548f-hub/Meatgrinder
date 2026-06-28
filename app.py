@@ -53,8 +53,9 @@ st.markdown("""
 .stApp {
   background: #F1F6F6 !important;
 }
-.main .block-container {
-  padding: 0 0 80px 0 !important;
+.main .block-container,
+[data-testid="stMainBlockContainer"] {
+  padding: 0 28px 80px 28px !important;
   max-width: 100% !important;
 }
 
@@ -552,6 +553,8 @@ for k, v in {
     'pdf_meta': None, 'deck_meta': {},
     'report_pdf': None, 'report_name': None,
     'win_start': None, 'win_end': None, 'excl_extremes': False,
+    'deck_library': [], 'active_deck_id': None,
+    'last_upload_sig': None, 'pdf_filename': None,
     'hfrx_choice': None,
 }.items():
     if k not in st.session_state:
@@ -569,6 +572,7 @@ def _load_pdf_file(up):
         st.session_state['pdf_warns'] = warns
         st.session_state['pdf_meta'] = meta
         st.session_state['pdf_sig'] = sig
+        st.session_state['pdf_filename'] = up.name
         st.session_state['pdf_name_default'] = _name_from_file(up.name)
 
 
@@ -583,6 +587,48 @@ def _name_from_file(filename):
     base = os.path.splitext(os.path.basename(filename or ''))[0]
     base = base.replace('_', ' ').replace('-', ' ').strip()
     return base or 'Fund'
+
+
+def _activate_deck(deck_id):
+    """Make a library entry the active deck and derive the working state from it."""
+    entry = next((e for e in st.session_state['deck_library'] if e['id'] == deck_id), None)
+    if entry is None:
+        return
+    st.session_state.update({
+        'active_deck_id': deck_id,
+        'fund_df': entry['df'],
+        'outliers_df': entry['outliers_df'],
+        'fund_name': entry['fund_name'],
+        'deck_meta': entry['meta'],
+        'parse_diag': entry['parse_diag'],
+        'report_pdf': None,
+        'win_start': None, 'win_end': None,
+    })
+
+
+def _add_deck(fund_name, df, meta, diag, source):
+    """Append a new timestamped deck to the session library and activate it."""
+    import uuid
+    from datetime import datetime
+    now = datetime.now()
+    df = df[['year', 'month', 'ret']].copy().reset_index(drop=True)
+    entry = {
+        'id': uuid.uuid4().hex[:8],
+        'fund_name': fund_name,
+        'label': f"{source}  \u00b7  {now:%Y-%m-%d %H:%M:%S}",
+        'df': df,
+        'outliers_df': compute_outliers(df),
+        'meta': meta or {},
+        'parse_diag': diag,
+        'uploaded_at': now,
+    }
+    st.session_state['deck_library'].append(entry)
+    _activate_deck(entry['id'])
+
+
+def _active_entry():
+    return next((e for e in st.session_state.get('deck_library', [])
+                 if e['id'] == st.session_state.get('active_deck_id')), None)
 
 
 def _render_pdf_picker():
@@ -621,17 +667,11 @@ def _render_pdf_picker():
         with lc:
             if st.button("Load into Argus", type="primary", key="pdf_load"):
                 df = sel['df'][['year', 'month', 'ret']].copy()
-                st.session_state.update({
-                    'fund_df': df,
-                    'outliers_df': compute_outliers(df),
-                    'fund_name': name,
-                    'deck_meta': st.session_state.get('pdf_meta') or {}, 'report_pdf': None,
-                    'parse_diag': {
-                        'date_col': 'PDF deck', 'date_format': 'year \u00d7 month grid',
-                        'ret_col': 'PDF deck', 'ret_format': 'percent',
-                        'n_parsed': sel['n'], 'n_dropped': 0, 'failed_dates': [],
-                    },
-                })
+                _add_deck(name, df, st.session_state.get('pdf_meta') or {},
+                          {'date_col': 'PDF deck', 'date_format': 'year \u00d7 month grid',
+                           'ret_col': 'PDF deck', 'ret_format': 'percent',
+                           'n_parsed': sel['n'], 'n_dropped': 0, 'failed_dates': []},
+                          st.session_state.get('pdf_filename') or name)
                 _clear_pdf_state()
                 st.rerun()
         with rc:
@@ -699,21 +739,19 @@ if st.session_state['fund_df'] is None:
         """, unsafe_allow_html=True)
 
     if up is not None:
-        if up.name.lower().endswith('.pdf'):
-            _load_pdf_file(up)
-        else:
-            df, err, diag = parse_uploaded_file(up)
-            if err:
-                st.error(err)
-            else:
-                st.session_state.update({
-                    'fund_df': df,
-                    'outliers_df': compute_outliers(df),
-                    'parse_diag': diag,
-                    'fund_name': _name_from_file(up.name),
-                    'deck_meta': {}, 'report_pdf': None,
-                })
+        _usig = f"{up.name}:{getattr(up, 'size', 0)}"
+        if st.session_state.get('last_upload_sig') != _usig:
+            st.session_state['last_upload_sig'] = _usig
+            if up.name.lower().endswith('.pdf'):
+                _load_pdf_file(up)
                 st.rerun()
+            else:
+                df, err, diag = parse_uploaded_file(up)
+                if err:
+                    st.error(err)
+                else:
+                    _add_deck(_name_from_file(up.name), df, {}, diag, up.name)
+                    st.rerun()
 
     _render_pdf_picker()
     st.stop()
@@ -729,30 +767,57 @@ if _hfrx_cur not in _hfrx_names:
     _hfrx_cur = _hfrx_names[0]
 
 _ALIGN = '<div style="height:24px;"></div>'   # drops buttons to the input baseline
-c_up, c_fund, c_hfrx, _pad = st.columns([0.95, 1.7, 1.7, 1.3])
+c_up, c_lib, c_rm, c_fund, c_hfrx = st.columns([0.95, 2.0, 0.7, 1.3, 1.5])
 
 with c_up:
     new_up = st.file_uploader("Upload Fund Data", type=['csv','xlsx','xls','pdf'])
     if new_up is not None:
-        if new_up.name.lower().endswith('.pdf'):
-            _load_pdf_file(new_up)
-        else:
-            df2, err2, diag2 = parse_uploaded_file(new_up)
-            if err2:
-                st.error(err2)
-            else:
-                st.session_state.update({
-                    'fund_df': df2,
-                    'outliers_df': compute_outliers(df2),
-                    'parse_diag': diag2,
-                    'fund_name': _name_from_file(new_up.name),
-                    'deck_meta': {}, 'report_pdf': None,
-                })
+        _usig = f"{new_up.name}:{getattr(new_up, 'size', 0)}"
+        if st.session_state.get('last_upload_sig') != _usig:
+            st.session_state['last_upload_sig'] = _usig
+            if new_up.name.lower().endswith('.pdf'):
+                _load_pdf_file(new_up)
                 st.rerun()
+            else:
+                df2, err2, diag2 = parse_uploaded_file(new_up)
+                if err2:
+                    st.error(err2)
+                else:
+                    _add_deck(_name_from_file(new_up.name), df2, {}, diag2, new_up.name)
+                    st.rerun()
+
+with c_lib:
+    _lib = sorted(st.session_state['deck_library'], key=lambda e: e['uploaded_at'], reverse=True)
+    _labels = [e['label'] for e in _lib]
+    _ids = [e['id'] for e in _lib]
+    _aidx = _ids.index(st.session_state['active_deck_id']) if st.session_state.get('active_deck_id') in _ids else 0
+    _sel = st.selectbox("Loaded decks (most recent first)", _labels, index=_aidx)
+    _sel_id = _ids[_labels.index(_sel)]
+    if _sel_id != st.session_state.get('active_deck_id'):
+        _activate_deck(_sel_id)
+        st.rerun()
+
+with c_rm:
+    st.markdown(_ALIGN, unsafe_allow_html=True)
+    if st.button("Remove", key='deck_rm', use_container_width=True):
+        _aid = st.session_state.get('active_deck_id')
+        st.session_state['deck_library'] = [e for e in st.session_state['deck_library'] if e['id'] != _aid]
+        _rem = st.session_state['deck_library']
+        if _rem:
+            _activate_deck(max(_rem, key=lambda e: e['uploaded_at'])['id'])
+        else:
+            st.session_state.update({'active_deck_id': None, 'fund_df': None,
+                                     'deck_meta': {}, 'report_pdf': None})
+        st.session_state['last_upload_sig'] = None
+        st.rerun()
 
 with c_fund:
     fn = st.text_input("Fund Name", value=st.session_state['fund_name'])
-    st.session_state['fund_name'] = fn
+    if fn != st.session_state['fund_name']:
+        st.session_state['fund_name'] = fn
+        _e = _active_entry()
+        if _e:
+            _e['fund_name'] = fn
 
 with c_hfrx:
     st.session_state['hfrx_choice'] = st.selectbox(
