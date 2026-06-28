@@ -55,7 +55,7 @@ st.markdown("""
 }
 .main .block-container,
 [data-testid="stMainBlockContainer"] {
-  padding: 0 40px 80px 40px !important;
+  padding: 24px 52px 80px 52px !important;
   max-width: 100% !important;
 }
 
