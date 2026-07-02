@@ -59,6 +59,10 @@ st.markdown("""
   max-width: 100% !important;
 }
 
+/* Control cluster (Input + Analysis Period) — inset directly via the keyed
+   container so it does not depend on the main block-container padding. */
+.st-key-argus_ctrls { padding-left: 48px !important; }
+
 /* ── Hide Streamlit chrome ── */
 #MainMenu, footer { visibility: hidden; }
 [data-testid="stToolbar"]        { display: none !important; }
@@ -444,6 +448,42 @@ table.mg-tbl td:first-child { text-align: left; }
   vertical-align: middle;
   margin-left: 10px;
 }
+
+/* ── Mobile (phones ≤ 640px): stack layouts, full-width inputs, tighter margins.
+   Overrides the desktop no-wrap rule so columns stack instead of crushing. ── */
+@media (max-width: 640px) {
+  [data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; }
+  [data-testid="stColumn"],
+  [data-testid="stHorizontalBlock"] > div {
+    min-width: 100% !important;
+    flex: 1 1 100% !important;
+  }
+  .main .block-container,
+  [data-testid="stMainBlockContainer"] {
+    padding: 14px 14px 60px 14px !important;
+  }
+  .st-key-argus_ctrls { padding-left: 0 !important; }
+
+  /* Inputs & uploader take the full row instead of a fixed/fit width */
+  [data-testid="stTextInput"],
+  [data-testid="stTextInput"] input,
+  [data-testid="stSelectbox"],
+  [data-testid="stFileUploader"] {
+    width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Brand + banner scale down */
+  .mg-topbar { height: 56px !important; }
+  .mg-topbar .brand { font-size: 26px !important; letter-spacing: 2px !important; }
+
+  /* Metric band: 6 across is unreadable on a phone → 2 columns */
+  .mg-stats { grid-template-columns: repeat(2, 1fr) !important; }
+  .mg-stat  { padding: 14px 14px 12px !important; }
+  .mg-stat:nth-child(2n) { border-right: none !important; }
+  .mg-stat .s-val { font-size: 20px !important; }
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -759,144 +799,145 @@ if st.session_state['fund_df'] is None:
 
 # ─── CONTROLS BAR ─────────────────────────────────────────────────────────────
 
-st.markdown('<div class="mg-input-hdr">Input</div>', unsafe_allow_html=True)
+with st.container(key="argus_ctrls"):
+    st.markdown('<div class="mg-input-hdr">Input</div>', unsafe_allow_html=True)
 
-_hfrx_names = list(HFRX_INDICES.keys())
-_hfrx_cur = st.session_state.get('hfrx_choice', _hfrx_names[0])
-if _hfrx_cur not in _hfrx_names:
-    _hfrx_cur = _hfrx_names[0]
+    _hfrx_names = list(HFRX_INDICES.keys())
+    _hfrx_cur = st.session_state.get('hfrx_choice', _hfrx_names[0])
+    if _hfrx_cur not in _hfrx_names:
+        _hfrx_cur = _hfrx_names[0]
 
-_ALIGN = '<div style="height:24px;"></div>'   # drops buttons to the input baseline
-c_up, c_lib, c_rm, c_fund, c_hfrx = st.columns([0.95, 2.0, 0.7, 1.3, 1.5])
+    _ALIGN = '<div style="height:24px;"></div>'   # drops buttons to the input baseline
+    c_up, c_lib, c_rm, c_fund, c_hfrx = st.columns([0.95, 2.0, 0.7, 1.3, 1.5])
 
-with c_up:
-    new_up = st.file_uploader("Upload Fund Data", type=['csv','xlsx','xls','pdf'])
-    if new_up is not None:
-        _usig = f"{new_up.name}:{getattr(new_up, 'size', 0)}"
-        if st.session_state.get('last_upload_sig') != _usig:
-            st.session_state['last_upload_sig'] = _usig
-            if new_up.name.lower().endswith('.pdf'):
-                _load_pdf_file(new_up)
-                st.rerun()
-            else:
-                df2, err2, diag2 = parse_uploaded_file(new_up)
-                if err2:
-                    st.error(err2)
-                else:
-                    _add_deck(_name_from_file(new_up.name), df2, {}, diag2, new_up.name)
+    with c_up:
+        new_up = st.file_uploader("Upload Fund Data", type=['csv','xlsx','xls','pdf'])
+        if new_up is not None:
+            _usig = f"{new_up.name}:{getattr(new_up, 'size', 0)}"
+            if st.session_state.get('last_upload_sig') != _usig:
+                st.session_state['last_upload_sig'] = _usig
+                if new_up.name.lower().endswith('.pdf'):
+                    _load_pdf_file(new_up)
                     st.rerun()
+                else:
+                    df2, err2, diag2 = parse_uploaded_file(new_up)
+                    if err2:
+                        st.error(err2)
+                    else:
+                        _add_deck(_name_from_file(new_up.name), df2, {}, diag2, new_up.name)
+                        st.rerun()
 
-with c_lib:
-    _lib = sorted(st.session_state['deck_library'], key=lambda e: e['uploaded_at'], reverse=True)
-    _labels = [e['label'] for e in _lib]
-    _ids = [e['id'] for e in _lib]
-    _aidx = _ids.index(st.session_state['active_deck_id']) if st.session_state.get('active_deck_id') in _ids else 0
-    _sel = st.selectbox("Loaded decks (most recent first)", _labels, index=_aidx)
-    _sel_id = _ids[_labels.index(_sel)]
-    if _sel_id != st.session_state.get('active_deck_id'):
-        _activate_deck(_sel_id)
-        st.rerun()
-
-with c_rm:
-    st.markdown(_ALIGN, unsafe_allow_html=True)
-    if st.button("Remove", key='deck_rm', use_container_width=True):
-        _aid = st.session_state.get('active_deck_id')
-        st.session_state['deck_library'] = [e for e in st.session_state['deck_library'] if e['id'] != _aid]
-        _rem = st.session_state['deck_library']
-        if _rem:
-            _activate_deck(max(_rem, key=lambda e: e['uploaded_at'])['id'])
-        else:
-            st.session_state.update({'active_deck_id': None, 'fund_df': None,
-                                     'deck_meta': {}, 'report_pdf': None})
-        st.session_state['last_upload_sig'] = None
-        st.rerun()
-
-with c_fund:
-    fn = st.text_input("Fund Name", value=st.session_state['fund_name'])
-    if fn != st.session_state['fund_name']:
-        st.session_state['fund_name'] = fn
-        _e = _active_entry()
-        if _e:
-            _e['fund_name'] = fn
-
-with c_hfrx:
-    st.session_state['hfrx_choice'] = st.selectbox(
-        "Hedge Fund Index", _hfrx_names,
-        index=_hfrx_names.index(_hfrx_cur), key='hfrx_sel')
-
-bm3_name = st.session_state['hfrx_choice']
-bm3_df = HFRX_INDICES[bm3_name]
-
-_render_pdf_picker()
-
-
-# ─── ANALYSIS PERIOD ──────────────────────────────────────────────────────────
-
-_raw_all = st.session_state['fund_df']
-_mkeys = [(int(r.year), int(r.month)) for r in _raw_all.sort_values(['year', 'month']).itertuples()]
-_mlabels = [f"{MN[m - 1]} {y}" for (y, m) in _mkeys]
-if st.session_state.get('win_start') not in _mkeys:
-    st.session_state['win_start'] = _mkeys[0]
-if st.session_state.get('win_end') not in _mkeys:
-    st.session_state['win_end'] = _mkeys[-1]
-
-
-def _set_window(months=None, ytd=False):
-    end = _mkeys[-1]
-    if ytd:
-        start = next((k for k in _mkeys if k[0] == end[0]), _mkeys[0])
-    elif months is None:
-        start = _mkeys[0]
-    else:
-        start = _mkeys[max(0, len(_mkeys) - months)]
-    st.session_state['win_start'] = start
-    st.session_state['win_end'] = end
-    st.session_state['report_pdf'] = None
-
-
-st.markdown('<div class="mg-input-hdr" style="font-size:15px;padding:0;">Analysis Period</div>',
-            unsafe_allow_html=True)
-_presets = [('Max', dict()), ('10Y', dict(months=120)), ('5Y', dict(months=60)),
-            ('3Y', dict(months=36)), ('1Y', dict(months=12)), ('YTD', dict(ytd=True))]
-_r1 = st.columns([1.8, 1.8, 1.6, 1.6])
-with _r1[0]:
-    _s_lab = st.selectbox("Start", _mlabels, index=_mkeys.index(st.session_state['win_start']))
-with _r1[1]:
-    _e_lab = st.selectbox("End", _mlabels, index=_mkeys.index(st.session_state['win_end']))
-st.session_state['win_start'] = _mkeys[_mlabels.index(_s_lab)]
-st.session_state['win_end'] = _mkeys[_mlabels.index(_e_lab)]
-with _r1[2]:
-    st.markdown(_ALIGN, unsafe_allow_html=True)
-    _xx = st.toggle("Exclude best/worst", value=st.session_state['excl_extremes'])
-    if _xx != st.session_state['excl_extremes']:
-        st.session_state['excl_extremes'] = _xx
-        st.session_state['report_pdf'] = None
-with _r1[3]:
-    st.markdown(_ALIGN, unsafe_allow_html=True)
-    st.session_state['trimmed'] = st.toggle("Exclude \u22653\u03c3 outliers",
-                                            value=st.session_state['trimmed'])
-
-
-def _preset_window(kw):
-    end = _mkeys[-1]
-    if kw.get('ytd'):
-        start = next((k for k in _mkeys if k[0] == end[0]), _mkeys[0])
-    elif kw.get('months') is None:
-        start = _mkeys[0]
-    else:
-        start = _mkeys[max(0, len(_mkeys) - kw['months'])]
-    return (start, end)
-
-
-_cur_win = (st.session_state['win_start'], st.session_state['win_end'])
-_active_preset = next((lbl for lbl, kw in _presets if _preset_window(kw) == _cur_win), None)
-_r2 = st.columns(6)
-for _col, (_lbl, _kw) in zip(_r2, _presets):
-    with _col:
-        if st.button(_lbl, key=f"preset_{_lbl}", use_container_width=True,
-                     type=("primary" if _lbl == _active_preset else "secondary")):
-            _set_window(**_kw)
+    with c_lib:
+        _lib = sorted(st.session_state['deck_library'], key=lambda e: e['uploaded_at'], reverse=True)
+        _labels = [e['label'] for e in _lib]
+        _ids = [e['id'] for e in _lib]
+        _aidx = _ids.index(st.session_state['active_deck_id']) if st.session_state.get('active_deck_id') in _ids else 0
+        _sel = st.selectbox("Loaded decks (most recent first)", _labels, index=_aidx)
+        _sel_id = _ids[_labels.index(_sel)]
+        if _sel_id != st.session_state.get('active_deck_id'):
+            _activate_deck(_sel_id)
             st.rerun()
+
+    with c_rm:
+        st.markdown(_ALIGN, unsafe_allow_html=True)
+        if st.button("Remove", key='deck_rm', use_container_width=True):
+            _aid = st.session_state.get('active_deck_id')
+            st.session_state['deck_library'] = [e for e in st.session_state['deck_library'] if e['id'] != _aid]
+            _rem = st.session_state['deck_library']
+            if _rem:
+                _activate_deck(max(_rem, key=lambda e: e['uploaded_at'])['id'])
+            else:
+                st.session_state.update({'active_deck_id': None, 'fund_df': None,
+                                         'deck_meta': {}, 'report_pdf': None})
+            st.session_state['last_upload_sig'] = None
+            st.rerun()
+
+    with c_fund:
+        fn = st.text_input("Fund Name", value=st.session_state['fund_name'])
+        if fn != st.session_state['fund_name']:
+            st.session_state['fund_name'] = fn
+            _e = _active_entry()
+            if _e:
+                _e['fund_name'] = fn
+
+    with c_hfrx:
+        st.session_state['hfrx_choice'] = st.selectbox(
+            "Hedge Fund Index", _hfrx_names,
+            index=_hfrx_names.index(_hfrx_cur), key='hfrx_sel')
+
+    bm3_name = st.session_state['hfrx_choice']
+    bm3_df = HFRX_INDICES[bm3_name]
+
+    _render_pdf_picker()
+
+
+    # ─── ANALYSIS PERIOD ──────────────────────────────────────────────────────────
+
+    _raw_all = st.session_state['fund_df']
+    _mkeys = [(int(r.year), int(r.month)) for r in _raw_all.sort_values(['year', 'month']).itertuples()]
+    _mlabels = [f"{MN[m - 1]} {y}" for (y, m) in _mkeys]
+    if st.session_state.get('win_start') not in _mkeys:
+        st.session_state['win_start'] = _mkeys[0]
+    if st.session_state.get('win_end') not in _mkeys:
+        st.session_state['win_end'] = _mkeys[-1]
+
+
+    def _set_window(months=None, ytd=False):
+        end = _mkeys[-1]
+        if ytd:
+            start = next((k for k in _mkeys if k[0] == end[0]), _mkeys[0])
+        elif months is None:
+            start = _mkeys[0]
+        else:
+            start = _mkeys[max(0, len(_mkeys) - months)]
+        st.session_state['win_start'] = start
+        st.session_state['win_end'] = end
+        st.session_state['report_pdf'] = None
+
+
+    st.markdown('<div class="mg-input-hdr" style="font-size:15px;padding:0;">Analysis Period</div>',
+                unsafe_allow_html=True)
+    _presets = [('Max', dict()), ('10Y', dict(months=120)), ('5Y', dict(months=60)),
+                ('3Y', dict(months=36)), ('1Y', dict(months=12)), ('YTD', dict(ytd=True))]
+    _r1 = st.columns([1.8, 1.8, 1.6, 1.6])
+    with _r1[0]:
+        _s_lab = st.selectbox("Start", _mlabels, index=_mkeys.index(st.session_state['win_start']))
+    with _r1[1]:
+        _e_lab = st.selectbox("End", _mlabels, index=_mkeys.index(st.session_state['win_end']))
+    st.session_state['win_start'] = _mkeys[_mlabels.index(_s_lab)]
+    st.session_state['win_end'] = _mkeys[_mlabels.index(_e_lab)]
+    with _r1[2]:
+        st.markdown(_ALIGN, unsafe_allow_html=True)
+        _xx = st.toggle("Exclude best/worst", value=st.session_state['excl_extremes'])
+        if _xx != st.session_state['excl_extremes']:
+            st.session_state['excl_extremes'] = _xx
+            st.session_state['report_pdf'] = None
+    with _r1[3]:
+        st.markdown(_ALIGN, unsafe_allow_html=True)
+        st.session_state['trimmed'] = st.toggle("Exclude \u22653\u03c3 outliers",
+                                                value=st.session_state['trimmed'])
+
+
+    def _preset_window(kw):
+        end = _mkeys[-1]
+        if kw.get('ytd'):
+            start = next((k for k in _mkeys if k[0] == end[0]), _mkeys[0])
+        elif kw.get('months') is None:
+            start = _mkeys[0]
+        else:
+            start = _mkeys[max(0, len(_mkeys) - kw['months'])]
+        return (start, end)
+
+
+    _cur_win = (st.session_state['win_start'], st.session_state['win_end'])
+    _active_preset = next((lbl for lbl, kw in _presets if _preset_window(kw) == _cur_win), None)
+    _r2 = st.columns(6)
+    for _col, (_lbl, _kw) in zip(_r2, _presets):
+        with _col:
+            if st.button(_lbl, key=f"preset_{_lbl}", use_container_width=True,
+                         type=("primary" if _lbl == _active_preset else "secondary")):
+                _set_window(**_kw)
+                st.rerun()
 
 
 # ─── RESOLVE DATA ─────────────────────────────────────────────────────────────
@@ -965,7 +1006,7 @@ if trimmed:
 st.markdown(
     f'<div style="border:1.5px solid #006B7A;background:#EAF3F4;color:#004A54;'
     f'font-family:Inter,sans-serif;font-weight:700;font-size:13px;letter-spacing:.2px;'
-    f'padding:7px 14px;border-radius:6px;margin:8px 0 4px;display:inline-block;">'
+    f'padding:7px 14px;border-radius:6px;margin:8px 0 4px 48px;display:inline-block;">'
     f'Showing&nbsp; {"&nbsp;&middot;&nbsp; ".join(_band_parts)}</div>',
     unsafe_allow_html=True)
 
